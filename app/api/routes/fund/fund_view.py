@@ -12,7 +12,7 @@ from app.services import fund_service
 router = APIRouter(prefix="", tags=["fund"])
 
 
-@router.post("/funds/search", response_model=ApiResponse, summary="查询基金列表")
+@router.post("/funds/list", response_model=ApiResponse, summary="查询基金列表")
 def list_funds(request: Request, payload: FundSearchRequest) -> ApiResponse:
     return success_response(
         request,

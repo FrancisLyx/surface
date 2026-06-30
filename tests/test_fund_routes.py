@@ -31,7 +31,7 @@ def test_list_funds_filters_by_keyword(monkeypatch):
     monkeypatch.setattr(akshare_client, "get_fund_names", lambda: FundNameData())
 
     response = TestClient(app).post(
-        "/funds/search",
+        "/funds/list",
         json={"keyword": "华夏", "page": 1, "page_size": 10},
     )
 
