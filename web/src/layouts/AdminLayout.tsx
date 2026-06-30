@@ -33,8 +33,8 @@ function AdminLayout() {
         <div className="brand">
           <FundOutlined />
           <div>
-            <Typography.Title level={1}>基金数据工作台</Typography.Title>
-            <Typography.Text type="secondary">AkShare fund API console</Typography.Text>
+            <Typography.Title level={1}>surface金融管家</Typography.Title>
+            <Typography.Text type="secondary">powered by AkShare fund API</Typography.Text>
           </div>
         </div>
       </Header>
