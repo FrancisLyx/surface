@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, Card, Form, Input, Popconfirm, Space, Tag, message } from 'antd'
+import { Alert, Button, Card, Col, Form, Input, Popconfirm, Row, Space, Statistic, Tag, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { DeleteOutlined, SearchOutlined } from '@ant-design/icons'
 import {
-  listFavoriteFundEstimations,
+  getFavoriteFundReport,
   removeFavoriteFund,
   type FavoriteFundEstimationItem,
+  type FavoriteFundReportResponse,
   type FavoriteFundSearchRequest,
   type PageResponse,
 } from '../../api/fund'
@@ -15,6 +16,7 @@ function FundFavoritesPage() {
   const [messageApi, contextHolder] = message.useMessage()
   const [form] = Form.useForm<FavoriteFundSearchRequest>()
   const [favoriteList, setFavoriteList] = useState<PageResponse<FavoriteFundEstimationItem>>()
+  const [report, setReport] = useState<FavoriteFundReportResponse>()
   const [loading, setLoading] = useState(false)
   const [removingCode, setRemovingCode] = useState<string>()
   const [pagination, setPagination] = useState({ page: 1, page_size: 10 })
@@ -26,12 +28,13 @@ function FundFavoritesPage() {
   ) => {
     setLoading(true)
     try {
-      const data = await listFavoriteFundEstimations({
+      const data = await getFavoriteFundReport({
         keyword: values.keyword?.trim() || undefined,
         page,
         page_size: pageSize,
       })
-      setFavoriteList(data)
+      setReport(data)
+      setFavoriteList(data.page ?? undefined)
       setPagination({ page, page_size: pageSize })
     } catch (error) {
       messageApi.error(error instanceof Error ? error.message : '请求失败')
@@ -151,6 +154,48 @@ function FundFavoritesPage() {
           </Space>
         </Form.Item>
       </Form>
+      {report ? (
+        <div className="favorite-dashboard">
+          <Row gutter={[12, 12]}>
+            <Col xs={12} md={6} xl={3}>
+              <Statistic title="自选总数" value={report.summary.total} />
+            </Col>
+            <Col xs={12} md={6} xl={3}>
+              <Statistic title="有估算" value={report.summary.estimated_count} />
+            </Col>
+            <Col xs={12} md={6} xl={3}>
+              <Statistic title="上涨" value={report.summary.up_count} />
+            </Col>
+            <Col xs={12} md={6} xl={3}>
+              <Statistic title="下跌" value={report.summary.down_count} />
+            </Col>
+            <Col xs={12} md={6} xl={3}>
+              <Statistic title="暂无估算" value={report.summary.missing_count} />
+            </Col>
+            <Col xs={12} md={6} xl={3}>
+              <Statistic title="提醒" value={report.summary.alert_count} />
+            </Col>
+            <Col xs={12} md={6} xl={3}>
+              <Statistic title="最大涨幅" value={report.summary.max_up?.rate ?? '-'} />
+            </Col>
+            <Col xs={12} md={6} xl={3}>
+              <Statistic title="最大跌幅" value={report.summary.max_down?.rate ?? '-'} />
+            </Col>
+          </Row>
+          {report.alerts.length ? (
+            <div className="favorite-alerts">
+              {report.alerts.slice(0, 4).map((item) => (
+                <Alert
+                  key={`${item.fund_code}-${item.message}`}
+                  type="warning"
+                  showIcon
+                  message={`${item.fund_name} ${item.message}`}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <PagedTable
         data={favoriteList}
         columns={columns}

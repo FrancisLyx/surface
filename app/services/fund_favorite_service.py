@@ -3,10 +3,14 @@ from sqlalchemy.orm import Session
 
 from app.api.routes.fund.fund_schema import (
     FavoriteFundAddRequest,
+    FavoriteFundAlertItem,
     FavoriteFundCheckResponse,
     FavoriteFundEstimationItem,
     FavoriteFundItem,
     FavoriteFundRemoveResponse,
+    FavoriteFundReportExtreme,
+    FavoriteFundReportResponse,
+    FavoriteFundReportSummary,
 )
 from app.core.pagination import PageResponse
 from app.db.models.fund_favorite import UserFavoriteFund
@@ -104,6 +108,35 @@ def list_favorite_fund_estimations(
     )
 
 
+def get_favorite_fund_report(
+    db: Session,
+    user: User,
+    keyword: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> FavoriteFundReportResponse:
+    favorite_page = list_favorite_fund_estimations(db, user, keyword=keyword, page=page, page_size=page_size)
+    items = favorite_page.items
+    alerts = _build_alerts(items)
+    estimated_items = [item for item in items if item.has_estimation]
+    up_items = [item for item in estimated_items if _parse_percent(item.estimated_growth_rate) > 0]
+    down_items = [item for item in estimated_items if _parse_percent(item.estimated_growth_rate) < 0]
+    flat_items = [item for item in estimated_items if _parse_percent(item.estimated_growth_rate) == 0]
+
+    summary = FavoriteFundReportSummary(
+        total=favorite_page.total,
+        estimated_count=len(estimated_items),
+        up_count=len(up_items),
+        down_count=len(down_items),
+        flat_count=len(flat_items),
+        missing_count=len(items) - len(estimated_items),
+        alert_count=len(alerts),
+        max_up=_build_extreme(max(up_items, key=lambda item: _parse_percent(item.estimated_growth_rate), default=None)),
+        max_down=_build_extreme(min(down_items, key=lambda item: _parse_percent(item.estimated_growth_rate), default=None)),
+    )
+    return FavoriteFundReportResponse(summary=summary, alerts=alerts, page=favorite_page)
+
+
 def check_favorite_fund(db: Session, user: User, fund_code: str) -> FavoriteFundCheckResponse:
     normalized_code = fund_code.strip()
     favorite_id = db.scalar(
@@ -166,3 +199,80 @@ def _to_estimation_item(favorite: FavoriteFundItem, estimation) -> FavoriteFundE
         previous_nav=estimation.previous_nav,
         has_estimation=True,
     )
+
+
+def _build_alerts(items: list[FavoriteFundEstimationItem]) -> list[FavoriteFundAlertItem]:
+    alerts: list[FavoriteFundAlertItem] = []
+    for item in items:
+        if not item.has_estimation:
+            alerts.append(
+                FavoriteFundAlertItem(
+                    fund_code=item.fund_code,
+                    fund_name=item.fund_name,
+                    level="warning",
+                    message="暂无净值估算",
+                )
+            )
+            continue
+
+        growth_rate = _parse_percent(item.estimated_growth_rate)
+        if growth_rate >= 2:
+            alerts.append(
+                FavoriteFundAlertItem(
+                    fund_code=item.fund_code,
+                    fund_name=item.fund_name,
+                    level="warning",
+                    message=f"估算涨幅 {_format_percent(item.estimated_growth_rate)}",
+                )
+            )
+        elif growth_rate <= -2:
+            alerts.append(
+                FavoriteFundAlertItem(
+                    fund_code=item.fund_code,
+                    fund_name=item.fund_name,
+                    level="warning",
+                    message=f"估算跌幅 {_format_percent(item.estimated_growth_rate)}",
+                )
+            )
+
+        deviation = _parse_percent(item.estimate_deviation)
+        if abs(deviation) >= 2:
+            alerts.append(
+                FavoriteFundAlertItem(
+                    fund_code=item.fund_code,
+                    fund_name=item.fund_name,
+                    level="warning",
+                    message=f"估算偏差 {_format_percent(item.estimate_deviation)}",
+                )
+            )
+
+    return alerts
+
+
+def _build_extreme(item: FavoriteFundEstimationItem | None) -> FavoriteFundReportExtreme | None:
+    if item is None:
+        return None
+    return FavoriteFundReportExtreme(
+        fund_code=item.fund_code,
+        fund_name=item.fund_name,
+        rate=_format_percent(item.estimated_growth_rate),
+    )
+
+
+def _parse_percent(value: str | None) -> float:
+    if not value or value == "---":
+        return 0
+    normalized = value.strip().replace("%", "")
+    try:
+        return float(normalized)
+    except ValueError:
+        return 0
+
+
+def _format_percent(value: str | None) -> str:
+    if not value:
+        return "-"
+    trimmed = value.strip()
+    if not trimmed or trimmed == "---" or trimmed.endswith("%"):
+        return trimmed or "-"
+    return f"{trimmed}%"

@@ -37,6 +37,37 @@ export type FavoriteFundEstimationItem = FavoriteFundItem & {
   has_estimation: boolean
 }
 
+export type FavoriteFundReportExtreme = {
+  fund_code: string
+  fund_name: string
+  rate: string
+}
+
+export type FavoriteFundReportSummary = {
+  total: number
+  estimated_count: number
+  up_count: number
+  down_count: number
+  flat_count: number
+  missing_count: number
+  alert_count: number
+  max_up?: FavoriteFundReportExtreme | null
+  max_down?: FavoriteFundReportExtreme | null
+}
+
+export type FavoriteFundAlertItem = {
+  fund_code: string
+  fund_name: string
+  level: string
+  message: string
+}
+
+export type FavoriteFundReportResponse = {
+  summary: FavoriteFundReportSummary
+  alerts: FavoriteFundAlertItem[]
+  page?: PageResponse<FavoriteFundEstimationItem> | null
+}
+
 export type FundEstimationItem = {
   code: string
   name: string
@@ -166,6 +197,10 @@ export function listFavoriteFunds(request: FavoriteFundSearchRequest) {
 
 export function listFavoriteFundEstimations(request: FavoriteFundSearchRequest) {
   return post<PageResponse<FavoriteFundEstimationItem>>('/funds/favorites/estimations', request)
+}
+
+export function getFavoriteFundReport(request: FavoriteFundSearchRequest) {
+  return post<FavoriteFundReportResponse>('/funds/favorites/report', request)
 }
 
 export function checkFavoriteFund(request: FavoriteFundCodeRequest) {

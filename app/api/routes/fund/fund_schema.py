@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.core.pagination import PageResponse
+
 
 class FundSearchRequest(BaseModel):
     keyword: str | None = Field(default=None, description="基金代码、简称或拼音关键字")
@@ -75,6 +77,37 @@ class FavoriteFundEstimationItem(FavoriteFundItem):
     previous_nav_date: str | None
     previous_nav: str | None
     has_estimation: bool
+
+
+class FavoriteFundReportExtreme(BaseModel):
+    fund_code: str
+    fund_name: str
+    rate: str
+
+
+class FavoriteFundReportSummary(BaseModel):
+    total: int
+    estimated_count: int
+    up_count: int
+    down_count: int
+    flat_count: int
+    missing_count: int
+    alert_count: int
+    max_up: FavoriteFundReportExtreme | None
+    max_down: FavoriteFundReportExtreme | None
+
+
+class FavoriteFundAlertItem(BaseModel):
+    fund_code: str
+    fund_name: str
+    level: str
+    message: str
+
+
+class FavoriteFundReportResponse(BaseModel):
+    summary: FavoriteFundReportSummary
+    alerts: list[FavoriteFundAlertItem]
+    page: PageResponse[FavoriteFundEstimationItem] | None = None
 
 
 class FavoriteFundCheckResponse(BaseModel):

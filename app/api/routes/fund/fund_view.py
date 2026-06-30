@@ -82,6 +82,25 @@ def list_favorite_fund_estimations(
     )
 
 
+@router.post("/funds/favorites/report", response_model=ApiResponse, summary="查询我的自选基金日报")
+def get_favorite_fund_report(
+    request: Request,
+    payload: FavoriteFundSearchRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse:
+    return success_response(
+        request,
+        fund_favorite_service.get_favorite_fund_report(
+            db,
+            current_user,
+            keyword=payload.keyword,
+            page=payload.page,
+            page_size=payload.page_size,
+        ),
+    )
+
+
 @router.post("/funds/favorites/check", response_model=ApiResponse, summary="查询基金是否已自选")
 def check_favorite_fund(
     request: Request,
