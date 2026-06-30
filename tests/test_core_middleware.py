@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app.core.security import get_current_user
 from app.main import app
 
 
@@ -13,7 +14,11 @@ def test_request_middleware_adds_request_id_and_process_time_headers():
 
 
 def test_http_exception_response_uses_standard_error_shape():
-    response = TestClient(app).post("/api/v1/funds/value", json={"fund_code": "", "source": "daily"})
+    app.dependency_overrides[get_current_user] = lambda: object()
+    try:
+        response = TestClient(app).post("/api/v1/funds/value", json={"fund_code": "", "source": "daily"})
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
     assert response.status_code == 400
     assert response.json() == {
@@ -22,3 +27,10 @@ def test_http_exception_response_uses_standard_error_shape():
         "data": None,
         "request_id": response.headers["X-Request-ID"],
     }
+
+
+def test_fund_routes_require_token():
+    response = TestClient(app).post("/api/v1/funds/list", json={"page": 1, "page_size": 10})
+
+    assert response.status_code == 401
+    assert response.json()["code"] == 401

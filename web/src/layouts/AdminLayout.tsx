@@ -1,9 +1,8 @@
-import {
-  FundOutlined,
-} from '@ant-design/icons'
-import { Layout, Menu, Typography } from 'antd'
+import { LogoutOutlined, FundOutlined } from '@ant-design/icons'
+import { Button, Layout, Menu, Space, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { clearToken, getStoredUser } from '../utils/auth'
 import { appRoutes, defaultRoutePath } from '../utils/route'
 
 const { Header, Sider, Content } = Layout
@@ -17,9 +16,15 @@ const menuItems: MenuProps['items'] = appRoutes.map((route) => ({
 function AdminLayout() {
   const location = useLocation()
   const navigate = useNavigate()
+  const user = getStoredUser()
 
   const selectedKey =
     appRoutes.find((item) => item.path === location.pathname)?.path ?? defaultRoutePath
+
+  const logout = () => {
+    clearToken()
+    navigate('/login', { replace: true })
+  }
 
   return (
     <Layout className="app-shell">
@@ -31,6 +36,12 @@ function AdminLayout() {
             <Typography.Text type="secondary">powered by AkShare fund API</Typography.Text>
           </div>
         </div>
+        <Space className="header-user">
+          <Typography.Text>{user?.username ?? '未登录'}</Typography.Text>
+          <Button icon={<LogoutOutlined />} onClick={logout}>
+            退出登录
+          </Button>
+        </Space>
       </Header>
       <Layout className="app-body">
         <Sider className="app-sider" width={220} breakpoint="lg" collapsedWidth={0}>

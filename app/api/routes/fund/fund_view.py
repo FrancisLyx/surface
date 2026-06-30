@@ -9,9 +9,10 @@ from app.api.routes.fund.fund_schema import (
     FundValueRequest,
 )
 from app.core.response import ApiResponse, success_response
+from app.core.auth import require_auth
 from app.services import fund_service
 
-router = APIRouter(prefix="", tags=["fund"])
+router = APIRouter(prefix="", tags=["fund"], dependencies=[require_auth()])
 
 
 @router.post("/funds/list", response_model=ApiResponse, summary="查询基金列表")

@@ -1,0 +1,3 @@
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role_id BIGINT;
+
+CREATE INDEX IF NOT EXISTS ix_users_role_id ON users (role_id);

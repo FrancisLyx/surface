@@ -1,4 +1,5 @@
 import axios, { AxiosError, type AxiosRequestConfig } from 'axios'
+import { clearToken, getToken } from './auth'
 
 export type ApiResponse<T> = {
   code: number
@@ -15,6 +16,14 @@ const service = axios.create({
   },
 })
 
+service.interceptors.request.use((config) => {
+  const token = getToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
 service.interceptors.response.use(
   (response) => response,
   (error: AxiosError<ApiResponse<unknown>>) => {
@@ -22,6 +31,13 @@ service.interceptors.response.use(
       error.response?.data?.message ||
       error.message ||
       '网络异常，请稍后重试'
+
+    if (error.response?.status === 401) {
+      clearToken()
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
+    }
 
     return Promise.reject(new Error(message))
   },
@@ -44,5 +60,13 @@ export function post<T>(url: string, data?: unknown, config?: AxiosRequestConfig
     url,
     method: 'POST',
     data,
+  })
+}
+
+export function get<T>(url: string, config?: AxiosRequestConfig) {
+  return request<T>({
+    ...config,
+    url,
+    method: 'GET',
   })
 }

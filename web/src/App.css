@@ -6,6 +6,7 @@
 .app-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   height: 64px;
   padding: 0 24px;
   background: #ffffff;
@@ -63,6 +64,23 @@
   min-width: 0;
   padding: 20px 24px 32px;
   background: #f4f6f8;
+}
+
+.header-user {
+  flex: 0 0 auto;
+}
+
+.auth-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background: #f4f6f8;
+}
+
+.auth-card {
+  width: min(420px, 100%);
+  border-radius: 6px;
 }
 
 .tool-panel {
