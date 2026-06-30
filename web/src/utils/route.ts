@@ -1,13 +1,16 @@
 import {
+  ApiOutlined,
   FundProjectionScreenOutlined,
   LineChartOutlined,
   ProfileOutlined,
   RadarChartOutlined,
+  SettingOutlined,
   StarOutlined,
   TrophyOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons'
 import { createElement, type ComponentType, type ReactNode } from 'react'
+import AiFundAnalysisPage from '../pages/ai/AiFundAnalysisPage'
 import FundDetailPage from '../pages/funds/FundDetailPage'
 import FundEstimationsPage from '../pages/funds/FundEstimationsPage'
 import FundFavoritesPage from '../pages/funds/FundFavoritesPage'
@@ -15,6 +18,7 @@ import FundListPage from '../pages/funds/FundListPage'
 import FundProfilePage from '../pages/funds/FundProfilePage'
 import FundRankPage from '../pages/funds/FundRankPage'
 import FundValuePage from '../pages/funds/FundValuePage'
+import SystemSettingsPage from '../pages/settings/SystemSettingsPage'
 
 export type AppRoute = {
   path: string
@@ -67,5 +71,17 @@ export const appRoutes: AppRoute[] = [
     label: '基金画像',
     icon: createElement(RadarChartOutlined),
     component: FundProfilePage,
+  },
+  {
+    path: '/ai/fund-analysis',
+    label: 'AI 分析',
+    icon: createElement(ApiOutlined),
+    component: AiFundAnalysisPage,
+  },
+  {
+    path: '/settings',
+    label: '系统设置',
+    icon: createElement(SettingOutlined),
+    component: SystemSettingsPage,
   },
 ]

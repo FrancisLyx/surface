@@ -12,8 +12,8 @@ router = APIRouter(prefix="/user", tags=["user"])
 
 
 @router.get("/register-status", response_model=ApiResponse, summary="查询注册开关")
-def get_register_status(request: Request) -> ApiResponse:
-    return success_response(request, user_service.get_register_status())
+def get_register_status(request: Request, db: Session = Depends(get_db)) -> ApiResponse:
+    return success_response(request, user_service.get_register_status(db))
 
 
 @router.post("/register", response_model=ApiResponse, summary="用户注册")

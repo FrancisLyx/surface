@@ -66,6 +66,12 @@ class FavoriteFundItem(BaseModel):
     created_at: str
 
 
+class FavoriteFundOptionItem(BaseModel):
+    fund_code: str
+    fund_name: str
+    fund_type: str | None
+
+
 class FavoriteFundEstimationItem(FavoriteFundItem):
     estimate_date: str | None
     estimated_nav: str | None

@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.2",
+    "@microsoft/fetch-event-source": "^2.0.1",
     "antd": "^6.5.0",
     "axios": "^1.18.1",
+    "cherry-markdown": "^0.11.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1"

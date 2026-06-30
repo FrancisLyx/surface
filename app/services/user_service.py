@@ -3,17 +3,17 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.api.routes.user.user_schema import LoginResponse, UserLoginRequest, UserRegisterRequest, UserResponse
-from app.core.config import is_user_registration_enabled
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.models.user import User
+from app.services import system_setting_service
 
 
-def get_register_status() -> dict[str, bool]:
-    return {"enabled": is_user_registration_enabled()}
+def get_register_status(db: Session) -> dict[str, bool]:
+    return system_setting_service.get_registration_setting(db)
 
 
 def register_user(db: Session, payload: UserRegisterRequest) -> UserResponse:
-    if not is_user_registration_enabled():
+    if not system_setting_service.is_user_registration_enabled(db):
         raise HTTPException(status_code=403, detail="registration is disabled")
 
     username = payload.username.strip()

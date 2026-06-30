@@ -31,3 +31,7 @@ def get_fund_portfolio_hold(symbol: str, year: str):
 
 def get_fund_industry_allocation(symbol: str, year: str):
     return ak.fund_portfolio_industry_allocation_em(symbol=symbol, date=year).fillna("")
+
+
+def get_fund_nav_trend(symbol: str):
+    return ak.fund_open_fund_info_em(symbol=symbol, indicator="单位净值走势", period="成立来").fillna("")

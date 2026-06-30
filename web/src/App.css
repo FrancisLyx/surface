@@ -112,6 +112,10 @@
   min-width: 130px;
 }
 
+.favorite-fund-select {
+  min-width: 280px;
+}
+
 .data-table {
   margin-top: 4px;
 }
@@ -151,6 +155,66 @@
 .value-result {
   display: grid;
   gap: 14px;
+}
+
+.ai-result-panel {
+  min-height: 420px;
+  padding: 18px;
+  background: #ffffff;
+  border: 1px solid #edf0f5;
+  border-radius: 6px;
+}
+
+.ai-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+}
+
+.ai-history-panel {
+  align-self: start;
+}
+
+.ai-history-item {
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.ai-history-item.active {
+  background: #f0f6ff;
+}
+
+.ai-empty-state {
+  display: grid;
+  min-height: 360px;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  color: #8c8c8c;
+}
+
+.ai-empty-state .anticon {
+  font-size: 32px;
+}
+
+.cherry-markdown-viewer .cherry {
+  border: 0;
+  box-shadow: none;
+}
+
+.cherry-markdown-viewer .cherry-previewer {
+  padding: 0;
+  border-left: 0;
+  background: transparent;
+}
+
+.cherry-markdown-viewer .cherry-markdown {
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.settings-panel {
+  max-width: 680px;
 }
 
 .page-stack {
@@ -197,6 +261,10 @@
   }
 
   .split-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-workspace {
     grid-template-columns: 1fr;
   }
 

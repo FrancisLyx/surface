@@ -159,6 +159,51 @@ def test_favorite_funds_are_scoped_to_current_user(monkeypatch):
         clear_overrides()
 
 
+def test_list_favorite_fund_options_are_scoped_to_current_user(monkeypatch):
+    monkeypatch.setenv("USER_REGISTRATION_ENABLED", "true")
+    client = make_client()
+    try:
+        admin_token = register_and_login(client, "admin", "admin@example.com", "13800138000")
+        guest_token = register_and_login(client, "guest", "guest@example.com", "13900139000")
+
+        client.post(
+            "/api/v1/funds/favorites/add",
+            json={"fund_code": "000001", "fund_name": "华夏成长混合", "fund_type": "混合型-灵活"},
+            headers=auth_headers(admin_token),
+        )
+        client.post(
+            "/api/v1/funds/favorites/add",
+            json={"fund_code": "000002", "fund_name": "嘉实增长混合", "fund_type": "混合型-偏股"},
+            headers=auth_headers(admin_token),
+        )
+        client.post(
+            "/api/v1/funds/favorites/add",
+            json={"fund_code": "000003", "fund_name": "中海可转债债券A", "fund_type": "债券型"},
+            headers=auth_headers(guest_token),
+        )
+
+        response = client.post(
+            "/api/v1/funds/favorites/options",
+            headers=auth_headers(admin_token),
+        )
+
+        assert response.status_code == 200
+        assert response.json()["data"] == [
+            {
+                "fund_code": "000002",
+                "fund_name": "嘉实增长混合",
+                "fund_type": "混合型-偏股",
+            },
+            {
+                "fund_code": "000001",
+                "fund_name": "华夏成长混合",
+                "fund_type": "混合型-灵活",
+            },
+        ]
+    finally:
+        clear_overrides()
+
+
 def test_list_favorite_fund_estimations(monkeypatch):
     monkeypatch.setenv("USER_REGISTRATION_ENABLED", "true")
 

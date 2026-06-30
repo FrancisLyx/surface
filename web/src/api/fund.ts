@@ -24,6 +24,12 @@ export type FavoriteFundItem = {
   created_at: string
 }
 
+export type FavoriteFundOptionItem = {
+  fund_code: string
+  fund_name: string
+  fund_type?: string | null
+}
+
 export type FavoriteFundEstimationItem = FavoriteFundItem & {
   estimate_date?: string | null
   estimated_nav?: string | null
@@ -193,6 +199,10 @@ export function addFavoriteFund(request: AddFavoriteFundRequest) {
 
 export function listFavoriteFunds(request: FavoriteFundSearchRequest) {
   return post<PageResponse<FavoriteFundItem>>('/funds/favorites/list', request)
+}
+
+export function listFavoriteFundOptions() {
+  return post<FavoriteFundOptionItem[]>('/funds/favorites/options')
 }
 
 export function listFavoriteFundEstimations(request: FavoriteFundSearchRequest) {

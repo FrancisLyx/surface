@@ -1,4 +1,5 @@
 from fastapi import HTTPException
+from datetime import date, datetime, timedelta
 
 from app.api.routes.fund.fund_schema import (
     FundDetailItem,
@@ -177,6 +178,76 @@ def get_fund_profile(request: FundProfileRequest) -> FundProfileResponse:
     )
 
 
+def get_fund_nav_trend_summary(symbol: str) -> dict[str, object]:
+    try:
+        nav_trend_df = akshare_client.get_fund_nav_trend(symbol)
+    except Exception:
+        return {
+            "period": "近一年",
+            "message": "近一年净值走势数据暂不可用",
+            "latest_points": [],
+        }
+
+    points: list[dict[str, str]] = []
+    for _, row in nav_trend_df.iterrows():
+        nav_date = _parse_date_value(row.get("净值日期", row.get("日期", "")))
+        unit_nav = _parse_float(row.get("单位净值", row.get("净值", "")))
+        if nav_date is None or unit_nav is None:
+            continue
+        points.append(
+            {
+                "date": nav_date,
+                "unit_nav": unit_nav,
+                "raw": {
+                    "净值日期": nav_date.isoformat(),
+                    "单位净值": f"{unit_nav:.4f}",
+                },
+            }
+        )
+
+    points.sort(key=lambda item: item["date"])
+    if not points:
+        return {
+            "period": "近一年",
+            "message": "近一年净值走势数据为空",
+            "latest_points": [],
+        }
+
+    end_date = points[-1]["date"]
+    start_boundary = end_date - timedelta(days=365)
+    recent_points = [point for point in points if point["date"] >= start_boundary]
+    if not recent_points:
+        recent_points = points[-min(len(points), 20) :]
+
+    start_point = recent_points[0]
+    end_point = recent_points[-1]
+    start_nav = start_point["unit_nav"]
+    end_nav = end_point["unit_nav"]
+    period_return = ((end_nav - start_nav) / start_nav) * 100 if start_nav else 0
+
+    peak = recent_points[0]["unit_nav"]
+    max_drawdown = 0.0
+    for point in recent_points:
+        unit_nav = point["unit_nav"]
+        if unit_nav > peak:
+            peak = unit_nav
+        if peak:
+            drawdown = ((unit_nav - peak) / peak) * 100
+            if drawdown < max_drawdown:
+                max_drawdown = drawdown
+
+    return {
+        "period": "近一年",
+        "start_date": start_point["date"].isoformat(),
+        "end_date": end_point["date"].isoformat(),
+        "start_nav": f"{start_nav:.4f}",
+        "end_nav": f"{end_nav:.4f}",
+        "period_return": f"{period_return:.2f}%",
+        "max_drawdown": f"{max_drawdown:.2f}%",
+        "latest_points": [point["raw"] for point in recent_points[-10:]],
+    }
+
+
 def find_fund_estimation(fund_code: str) -> FundEstimationItem | None:
     estimation_df = _load_fund_estimations("全部")
     for _, row in estimation_df.iterrows():
@@ -328,6 +399,32 @@ def _row_items(row):
     if isinstance(row, dict):
         return row.items()
     return []
+
+
+def _parse_date_value(value) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    value_text = str(value).strip()
+    if not value_text:
+        return None
+    for date_format in ("%Y-%m-%d", "%Y/%m/%d", "%Y%m%d"):
+        try:
+            return datetime.strptime(value_text, date_format).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _parse_float(value) -> float | None:
+    value_text = str(value).strip().replace(",", "")
+    if not value_text or value_text == "---":
+        return None
+    try:
+        return float(value_text)
+    except ValueError:
+        return None
 
 
 def _find_column(columns, include: str, exclude: str | None = None) -> str:

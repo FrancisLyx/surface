@@ -7,6 +7,7 @@ from app.api.routes.fund.fund_schema import (
     FavoriteFundCheckResponse,
     FavoriteFundEstimationItem,
     FavoriteFundItem,
+    FavoriteFundOptionItem,
     FavoriteFundRemoveResponse,
     FavoriteFundReportExtreme,
     FavoriteFundReportResponse,
@@ -84,6 +85,15 @@ def list_favorite_funds(
         pages=pages,
         items=[_to_item(favorite) for favorite in favorites],
     )
+
+
+def list_favorite_fund_options(db: Session, user: User) -> list[FavoriteFundOptionItem]:
+    favorites = db.scalars(
+        select(UserFavoriteFund)
+        .where(UserFavoriteFund.user_id == user.id)
+        .order_by(UserFavoriteFund.created_at.desc(), UserFavoriteFund.id.desc())
+    ).all()
+    return [_to_option_item(favorite) for favorite in favorites]
 
 
 def list_favorite_fund_estimations(
@@ -167,6 +177,14 @@ def _to_item(favorite: UserFavoriteFund) -> FavoriteFundItem:
         fund_name=favorite.fund_name,
         fund_type=favorite.fund_type,
         created_at=favorite.created_at.isoformat(),
+    )
+
+
+def _to_option_item(favorite: UserFavoriteFund) -> FavoriteFundOptionItem:
+    return FavoriteFundOptionItem(
+        fund_code=favorite.fund_code,
+        fund_name=favorite.fund_name,
+        fund_type=favorite.fund_type,
     )
 
 

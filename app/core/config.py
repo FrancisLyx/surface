@@ -12,6 +12,11 @@ class Settings(BaseModel):
     jwt_secret_key: str = "surface-development-secret"
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 1440
+    llm_api_key: str = ""
+    llm_base_url: str = "https://api.deepseek.com"
+    llm_model: str = "deepseek-chat"
+    llm_timeout_seconds: int = 60
+
 
 
 @lru_cache
@@ -24,6 +29,10 @@ def get_settings() -> Settings:
         jwt_secret_key=os.getenv("JWT_SECRET_KEY", "surface-development-secret"),
         jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
         jwt_access_token_expire_minutes=int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "1440")),
+        llm_api_key=os.getenv("LLM_API_KEY", ""),
+        llm_base_url=os.getenv("LLM_BASE_URL", "https://api.deepseek.com"),
+        llm_model=os.getenv("LLM_MODEL", "deepseek-chat"),
+        llm_timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "60")),
     )
 
 
