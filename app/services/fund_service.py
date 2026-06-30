@@ -72,7 +72,11 @@ def list_fund_estimations(
 
 def list_all_fund_estimations(category: str = "全部") -> list[FundEstimationItem]:
     estimation_df = _load_fund_estimations(category)
-    return [_build_fund_estimation_item(row, estimation_df.columns) for _, row in estimation_df.iterrows()]
+    latest_nav_by_code = _load_latest_nav_index()
+    return [
+        _build_fund_estimation_item(row, estimation_df.columns, latest_nav_by_code)
+        for _, row in estimation_df.iterrows()
+    ]
 
 
 def list_fund_rank(
@@ -205,29 +209,59 @@ def _load_open_fund_daily():
         raise HTTPException(status_code=502, detail=f"AkShare fund daily nav query failed: {exc}") from exc
 
 
-def _build_fund_estimation_item(row, columns) -> FundEstimationItem:
+def _build_fund_estimation_item(
+    row,
+    columns,
+    latest_nav_by_code: dict[str, FundLatestNavItem] | None = None,
+) -> FundEstimationItem:
     estimated_nav_column = _find_column(columns, "估算数据-估算值")
     estimated_growth_column = _find_column(columns, "估算数据-估算增长率")
     published_nav_column = _find_column(columns, "公布数据-单位净值")
     published_growth_column = _find_column(columns, "公布数据-日增长率")
     previous_nav_column = _find_column(columns, "单位净值", exclude="公布数据")
+    code = str(row.get("基金代码", ""))
     estimate_date = _extract_date(estimated_nav_column)
+    published_nav = str(row.get(published_nav_column, ""))
+    published_growth_rate = str(row.get(published_growth_column, ""))
     published_date = _extract_date(published_nav_column)
+
+    latest_nav = latest_nav_by_code.get(code) if latest_nav_by_code else None
+    if latest_nav is not None and latest_nav.unit_nav:
+        published_date = latest_nav.nav_date
+        published_nav = latest_nav.unit_nav
+        published_growth_rate = latest_nav.daily_growth_rate
+
     estimate_deviation = str(row.get("估算偏差", ""))
 
     return FundEstimationItem(
-        code=str(row.get("基金代码", "")),
+        code=code,
         name=str(row.get("基金名称", "")),
         estimate_date=estimate_date,
         estimated_nav=str(row.get(estimated_nav_column, "")),
         estimated_growth_rate=str(row.get(estimated_growth_column, "")),
         published_date=published_date,
-        published_nav=str(row.get(published_nav_column, "")),
-        published_growth_rate=str(row.get(published_growth_column, "")),
+        published_nav=published_nav,
+        published_growth_rate=published_growth_rate,
         estimate_deviation=estimate_deviation if estimate_date == published_date else "",
         previous_nav_date=_extract_date(previous_nav_column),
         previous_nav=str(row.get(previous_nav_column, "")),
     )
+
+
+def _load_latest_nav_index() -> dict[str, FundLatestNavItem]:
+    try:
+        daily_df = _load_open_fund_daily()
+    except Exception:
+        return {}
+
+    latest_nav_by_code: dict[str, FundLatestNavItem] = {}
+    for _, row in daily_df.iterrows():
+        item = _build_fund_latest_nav_item(row, daily_df.columns)
+        if item.code:
+            latest_nav_by_code[item.code] = item
+    return latest_nav_by_code
+
+
 
 
 def _build_fund_latest_nav_item(row, columns) -> FundLatestNavItem:

@@ -6,6 +6,18 @@ from app.clients import akshare_client
 from app.core.security import get_current_user
 
 
+class EmptyDailyNavData:
+    def fillna(self, value):
+        return self
+
+    @property
+    def columns(self):
+        return ["基金代码", "基金简称"]
+
+    def iterrows(self):
+        yield from enumerate([])
+
+
 @pytest.fixture(autouse=True)
 def override_current_user():
     app.dependency_overrides[get_current_user] = lambda: object()
@@ -143,6 +155,7 @@ def test_list_fund_estimations_filters_by_keyword(monkeypatch):
         "get_fund_estimations",
         lambda category="全部": FundEstimationData(),
     )
+    monkeypatch.setattr(akshare_client, "get_open_fund_daily", lambda: EmptyDailyNavData())
 
     response = TestClient(app).post(
         "/api/v1/funds/estimations/search",
@@ -214,6 +227,47 @@ def test_list_fund_estimations_omits_deviation_when_published_date_differs(monke
         "get_fund_estimations",
         lambda category="全部": FundEstimationData(),
     )
+    monkeypatch.setattr(akshare_client, "get_open_fund_daily", lambda: EmptyDailyNavData())
+
+    class DailyNavData:
+        def fillna(self, value):
+            return self
+
+        @property
+        def columns(self):
+            return [
+                "基金代码",
+                "基金简称",
+                "2026-06-30-单位净值",
+                "2026-06-30-累计净值",
+                "2026-06-29-单位净值",
+                "2026-06-29-累计净值",
+                "日增长值",
+                "日增长率",
+                "申购状态",
+                "赎回状态",
+                "手续费",
+            ]
+
+        def iterrows(self):
+            rows = [
+                {
+                    "基金代码": "000001",
+                    "基金简称": "华夏成长混合",
+                    "2026-06-30-单位净值": "",
+                    "2026-06-30-累计净值": "",
+                    "2026-06-29-单位净值": "1.2200",
+                    "2026-06-29-累计净值": "1.2200",
+                    "日增长值": "",
+                    "日增长率": "0.33%",
+                    "申购状态": "开放申购",
+                    "赎回状态": "开放赎回",
+                    "手续费": "0.15%",
+                }
+            ]
+            yield from enumerate(rows)
+
+    monkeypatch.setattr(akshare_client, "get_open_fund_daily", lambda: DailyNavData())
 
     response = TestClient(app).post(
         "/api/v1/funds/estimations/search",

@@ -9,6 +9,18 @@ from app.main import app
 from app.clients import akshare_client
 
 
+class EmptyDailyNavData:
+    def fillna(self, value):
+        return self
+
+    @property
+    def columns(self):
+        return ["基金代码", "基金简称"]
+
+    def iterrows(self):
+        yield from enumerate([])
+
+
 def make_client() -> TestClient:
     engine = create_engine(
         "sqlite://",
@@ -197,6 +209,7 @@ def test_list_favorite_fund_estimations(monkeypatch):
         "get_fund_estimations",
         lambda category="全部": FundEstimationData(),
     )
+    monkeypatch.setattr(akshare_client, "get_open_fund_daily", lambda: EmptyDailyNavData())
 
     client = make_client()
     try:
