@@ -14,6 +14,7 @@ export function PagedTable<T extends object>(props: {
   loading: boolean
   rowKey?: string | ((record: T) => string)
   onPageChange?: (page: number, pageSize: number) => void
+  onPageChange?: (page: number, pageSize: number) => void
 }) {
   return (
     <Table<T>

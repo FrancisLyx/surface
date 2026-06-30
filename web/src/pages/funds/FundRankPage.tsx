@@ -81,6 +81,13 @@ function FundRankPage() {
     await loadRank(values, 1, pagination.page_size)
   }
 
+  const handlePageChange = (page: number, pageSize: number) => {
+    const values = form.getFieldsValue()
+    const nextValues = { ...values, page, page_size: pageSize }
+    form.setFieldsValue(nextValues)
+    void submit(nextValues)
+  }
+
   return (
     <Card title="基金排行" className="tool-panel">
       {contextHolder}
