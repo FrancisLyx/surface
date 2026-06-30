@@ -1,0 +1,46 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv
+
+# Environment variables and local config
+.env
+.env.*
+!.env.example
+
+# Logs and runtime files
+*.log
+*.pid
+
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/
+
+# Local scratch/output
+tmp/
+temp/
+
+# Frontend dependencies and build output
+node_modules/
+web/node_modules/
+web/dist/
+web/build/
+web/.next/
+web/.nuxt/
+web/.svelte-kit/
+web/coverage/
+web/.env
+web/.env.*
+!web/.env.example
