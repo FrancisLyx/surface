@@ -51,7 +51,7 @@ http://127.0.0.1:8000
 健康检查接口：
 
 ```text
-http://127.0.0.1:8000/health
+http://127.0.0.1:8000/api/v1/health
 ```
 
 ## 启动前端
@@ -94,6 +94,64 @@ npm run build
 
 ```text
 web/dist
+```
+
+## 部署
+
+服务器部署脚本位于：
+
+```bash
+deploy/deploy.sh
+```
+
+首次部署前，在服务器项目根目录创建生产环境变量文件：
+
+```bash
+cp .env.production.example .env.production
+vim .env.production
+```
+
+之后执行：
+
+```bash
+bash deploy/deploy.sh
+```
+
+默认部署 `master` 分支。脚本会执行：
+
+- 拉取指定分支代码
+- 构建并重启后端 Docker 容器
+- 构建前端
+- 将 `web/dist/` 里的内容同步到 `/var/www/finance.liuyixuan.site/current/`
+
+指定部署分支：
+
+```bash
+bash deploy/deploy.sh dev
+```
+
+也可以使用环境变量指定：
+
+```bash
+SURFACE_GIT_BRANCH=dev bash deploy/deploy.sh
+```
+
+如果需要修改前端发布目录：
+
+```bash
+SURFACE_WEB_TARGET=/var/www/another-site/current bash deploy/deploy.sh
+```
+
+只部署前端：
+
+```bash
+bash deploy/deploy-web.sh
+```
+
+只部署前端并指定分支：
+
+```bash
+bash deploy/deploy-web.sh dev
 ```
 
 ## 运行测试

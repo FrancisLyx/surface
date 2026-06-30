@@ -8,14 +8,16 @@ import type {
   PageResponse,
 } from '../../api/fund'
 
-export function PagedTable<T extends { code?: string; name?: string }>(props: {
+export function PagedTable<T extends object>(props: {
   data?: PageResponse<T>
   columns: ColumnsType<T>
   loading: boolean
+  rowKey?: string | ((record: T) => string)
+  onPageChange?: (page: number, pageSize: number) => void
 }) {
   return (
     <Table<T>
-      rowKey={(record) => record.code ?? record.name ?? JSON.stringify(record)}
+      rowKey={props.rowKey ?? ((record) => JSON.stringify(record))}
       columns={props.columns}
       dataSource={props.data?.items ?? []}
       loading={props.loading}
@@ -26,7 +28,11 @@ export function PagedTable<T extends { code?: string; name?: string }>(props: {
               current: props.data.page,
               pageSize: props.data.page_size,
               total: props.data.total,
-              showSizeChanger: false,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              pageSizeOptions: [10, 20, 50, 100, 200],
+              showTotal: (total) => `共 ${total} 条`,
+              onChange: props.onPageChange,
             }
           : false
       }
@@ -133,6 +139,10 @@ export function RateTag(props: { value: string }) {
   const color = Number.isFinite(numeric) && numeric >= 0 ? 'red' : 'green'
 
   return <Tag color={displayValue !== '-' && displayValue !== '---' ? color : 'default'}>{displayValue}</Tag>
+}
+
+export function PlainRate(props: { value?: string | null }) {
+  return <span>{formatRate(props.value || '-')}</span>
 }
 
 function formatRate(value: string) {

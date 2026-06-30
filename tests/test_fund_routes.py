@@ -165,6 +165,7 @@ def test_list_fund_estimations_filters_by_keyword(monkeypatch):
                 "estimate_date": "2026-06-29",
                 "estimated_nav": "1.2345",
                 "estimated_growth_rate": "1.23%",
+                "published_date": "2026-06-29",
                 "published_nav": "---",
                 "published_growth_rate": "---",
                 "estimate_deviation": "---",
@@ -173,6 +174,57 @@ def test_list_fund_estimations_filters_by_keyword(monkeypatch):
             }
         ],
     }
+
+
+def test_list_fund_estimations_omits_deviation_when_published_date_differs(monkeypatch):
+    class FundEstimationData:
+        def fillna(self, value):
+            return self
+
+        @property
+        def columns(self):
+            return [
+                "基金代码",
+                "基金名称",
+                "2026-06-30-估算数据-估算值",
+                "2026-06-30-估算数据-估算增长率",
+                "2026-06-29-公布数据-单位净值",
+                "2026-06-29-公布数据-日增长率",
+                "估算偏差",
+                "2026-06-29-单位净值",
+            ]
+
+        def iterrows(self):
+            rows = [
+                {
+                    "基金代码": "000001",
+                    "基金名称": "华夏成长混合",
+                    "2026-06-30-估算数据-估算值": "1.2345",
+                    "2026-06-30-估算数据-估算增长率": "1.23%",
+                    "2026-06-29-公布数据-单位净值": "1.2200",
+                    "2026-06-29-公布数据-日增长率": "0.33%",
+                    "估算偏差": "0.88%",
+                    "2026-06-29-单位净值": "1.2200",
+                }
+            ]
+            yield from enumerate(rows)
+
+    monkeypatch.setattr(
+        akshare_client,
+        "get_fund_estimations",
+        lambda category="全部": FundEstimationData(),
+    )
+
+    response = TestClient(app).post(
+        "/api/v1/funds/estimations/search",
+        json={"keyword": "华夏", "page": 1, "page_size": 10},
+    )
+
+    assert response.status_code == 200
+    item = response.json()["data"]["items"][0]
+    assert item["estimate_date"] == "2026-06-30"
+    assert item["published_date"] == "2026-06-29"
+    assert item["estimate_deviation"] == ""
 
 
 def test_get_fund_estimation_by_symbol(monkeypatch):

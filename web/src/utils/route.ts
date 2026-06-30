@@ -3,12 +3,14 @@ import {
   LineChartOutlined,
   ProfileOutlined,
   RadarChartOutlined,
+  StarOutlined,
   TrophyOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons'
 import { createElement, type ComponentType, type ReactNode } from 'react'
 import FundDetailPage from '../pages/funds/FundDetailPage'
 import FundEstimationsPage from '../pages/funds/FundEstimationsPage'
+import FundFavoritesPage from '../pages/funds/FundFavoritesPage'
 import FundListPage from '../pages/funds/FundListPage'
 import FundProfilePage from '../pages/funds/FundProfilePage'
 import FundRankPage from '../pages/funds/FundRankPage'
@@ -29,6 +31,12 @@ export const appRoutes: AppRoute[] = [
     label: '基金列表',
     icon: createElement(UnorderedListOutlined),
     component: FundListPage,
+  },
+  {
+    path: '/funds/favorites',
+    label: '我的自选',
+    icon: createElement(StarOutlined),
+    component: FundFavoritesPage,
   },
   {
     path: '/funds/estimations',

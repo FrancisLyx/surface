@@ -16,12 +16,34 @@ export type FundItem = {
   pinyin: string
 }
 
+export type FavoriteFundItem = {
+  id: number
+  fund_code: string
+  fund_name: string
+  fund_type?: string | null
+  created_at: string
+}
+
+export type FavoriteFundEstimationItem = FavoriteFundItem & {
+  estimate_date?: string | null
+  estimated_nav?: string | null
+  estimated_growth_rate?: string | null
+  published_date?: string | null
+  published_nav?: string | null
+  published_growth_rate?: string | null
+  estimate_deviation?: string | null
+  previous_nav_date?: string | null
+  previous_nav?: string | null
+  has_estimation: boolean
+}
+
 export type FundEstimationItem = {
   code: string
   name: string
   estimate_date: string
   estimated_nav: string
   estimated_growth_rate: string
+  published_date: string
   published_nav: string
   published_growth_rate: string
   estimate_deviation: string
@@ -96,6 +118,18 @@ export type FundSearchRequest = {
   page_size: number
 }
 
+export type FavoriteFundSearchRequest = FundSearchRequest
+
+export type AddFavoriteFundRequest = {
+  fund_code: string
+  fund_name: string
+  fund_type?: string | null
+}
+
+export type FavoriteFundCodeRequest = {
+  fund_code: string
+}
+
 export type FundEstimationSearchRequest = FundSearchRequest & {
   category: string
 }
@@ -120,6 +154,26 @@ export type FundValueRequest = {
 
 export function listFunds(request: FundSearchRequest) {
   return post<PageResponse<FundItem>>('/funds/list', request)
+}
+
+export function addFavoriteFund(request: AddFavoriteFundRequest) {
+  return post<FavoriteFundItem>('/funds/favorites/add', request)
+}
+
+export function listFavoriteFunds(request: FavoriteFundSearchRequest) {
+  return post<PageResponse<FavoriteFundItem>>('/funds/favorites/list', request)
+}
+
+export function listFavoriteFundEstimations(request: FavoriteFundSearchRequest) {
+  return post<PageResponse<FavoriteFundEstimationItem>>('/funds/favorites/estimations', request)
+}
+
+export function checkFavoriteFund(request: FavoriteFundCodeRequest) {
+  return post<{ favorited: boolean }>('/funds/favorites/check', request)
+}
+
+export function removeFavoriteFund(request: FavoriteFundCodeRequest) {
+  return post<{ removed: boolean }>('/funds/favorites/remove', request)
 }
 
 export function listFundEstimations(request: FundEstimationSearchRequest) {

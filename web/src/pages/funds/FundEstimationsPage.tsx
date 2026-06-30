@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Button, Card, Form, Input, InputNumber, Select, message } from 'antd'
+import { Button, Card, Form, Input, Select, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { SearchOutlined } from '@ant-design/icons'
 import {
@@ -8,13 +8,14 @@ import {
   type FundEstimationSearchRequest,
   type PageResponse,
 } from '../../api/fund'
-import { PagedTable, RateTag } from './FundWidgets'
+import { PagedTable, PlainRate, RateTag } from './FundWidgets'
 
 function FundEstimationsPage() {
   const [messageApi, contextHolder] = message.useMessage()
   const [form] = Form.useForm<FundEstimationSearchRequest>()
   const [estimationList, setEstimationList] = useState<PageResponse<FundEstimationItem>>()
   const [loading, setLoading] = useState(false)
+  const [pagination, setPagination] = useState({ page: 1, page_size: 10 })
 
   const columns: ColumnsType<FundEstimationItem> = useMemo(
     () => [
@@ -28,30 +29,50 @@ function FundEstimationsPage() {
         width: 130,
         render: (value: string) => <RateTag value={value} />,
       },
+      { title: '公布日期', dataIndex: 'published_date', width: 120 },
       { title: '公布净值', dataIndex: 'published_nav', width: 120 },
-      { title: '公布日增长率', dataIndex: 'published_growth_rate', width: 130 },
-      { title: '估算偏差', dataIndex: 'estimate_deviation', width: 120 },
+      {
+        title: '公布日增长率',
+        dataIndex: 'published_growth_rate',
+        width: 130,
+        render: (value: string) => <RateTag value={value} />,
+      },
+      {
+        title: '估算偏差',
+        dataIndex: 'estimate_deviation',
+        width: 120,
+        render: (value: string) => <PlainRate value={value} />,
+      },
       { title: '上一净值日期', dataIndex: 'previous_nav_date', width: 130 },
       { title: '上一单位净值', dataIndex: 'previous_nav', width: 130 },
     ],
     [],
   )
 
-  const submit = async (values: FundEstimationSearchRequest) => {
+  const loadEstimations = async (
+    values: FundEstimationSearchRequest,
+    page = pagination.page,
+    pageSize = pagination.page_size,
+  ) => {
     setLoading(true)
     try {
       const data = await listFundEstimations({
         keyword: values.keyword?.trim() || undefined,
-        page: values.page,
-        page_size: values.page_size,
+        page,
+        page_size: pageSize,
         category: values.category,
       })
       setEstimationList(data)
+      setPagination({ page, page_size: pageSize })
     } catch (error) {
       messageApi.error(error instanceof Error ? error.message : '请求失败')
     } finally {
       setLoading(false)
     }
+  }
+
+  const submit = async (values: FundEstimationSearchRequest) => {
+    await loadEstimations(values, 1, pagination.page_size)
   }
 
   return (
@@ -60,7 +81,7 @@ function FundEstimationsPage() {
       <Form
         form={form}
         layout="inline"
-        initialValues={{ keyword: '华夏', page: 1, page_size: 10, category: '全部' }}
+        initialValues={{ keyword: '华夏', category: '全部' }}
         onFinish={submit}
         className="query-form"
       >
@@ -83,19 +104,18 @@ function FundEstimationsPage() {
             ].map((value) => ({ label: value, value }))}
           />
         </Form.Item>
-        <Form.Item name="page" label="页码" rules={[{ required: true }]}>
-          <InputNumber min={1} />
-        </Form.Item>
-        <Form.Item name="page_size" label="每页" rules={[{ required: true }]}>
-          <InputNumber min={1} max={200} />
-        </Form.Item>
         <Form.Item>
           <Button type="primary" icon={<SearchOutlined />} htmlType="submit" loading={loading}>
             查询
           </Button>
         </Form.Item>
       </Form>
-      <PagedTable data={estimationList} columns={columns} loading={loading} />
+      <PagedTable
+        data={estimationList}
+        columns={columns}
+        loading={loading}
+        onPageChange={(page, pageSize) => loadEstimations(form.getFieldsValue(), page, pageSize)}
+      />
     </Card>
   )
 }

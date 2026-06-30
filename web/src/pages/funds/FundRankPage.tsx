@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Button, Card, Form, Input, InputNumber, Select, message } from 'antd'
+import { Button, Card, Form, Input, Select, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { SearchOutlined } from '@ant-design/icons'
 import {
@@ -15,6 +15,7 @@ function FundRankPage() {
   const [form] = Form.useForm<FundRankSearchRequest>()
   const [rankList, setRankList] = useState<PageResponse<FundRankItem>>()
   const [loading, setLoading] = useState(false)
+  const [pagination, setPagination] = useState({ page: 1, page_size: 10 })
 
   const columns: ColumnsType<FundRankItem> = useMemo(
     () => [
@@ -58,21 +59,26 @@ function FundRankPage() {
     [],
   )
 
-  const submit = async (values: FundRankSearchRequest) => {
+  const loadRank = async (values: FundRankSearchRequest, page = pagination.page, pageSize = pagination.page_size) => {
     setLoading(true)
     try {
       const data = await listFundRank({
         category: values.category,
         keyword: values.keyword?.trim() || undefined,
-        page: values.page,
-        page_size: values.page_size,
+        page,
+        page_size: pageSize,
       })
       setRankList(data)
+      setPagination({ page, page_size: pageSize })
     } catch (error) {
       messageApi.error(error instanceof Error ? error.message : '请求失败')
     } finally {
       setLoading(false)
     }
+  }
+
+  const submit = async (values: FundRankSearchRequest) => {
+    await loadRank(values, 1, pagination.page_size)
   }
 
   return (
@@ -81,7 +87,7 @@ function FundRankPage() {
       <Form
         form={form}
         layout="inline"
-        initialValues={{ category: '全部', keyword: '华夏', page: 1, page_size: 10 }}
+        initialValues={{ category: '全部', keyword: '华夏' }}
         onFinish={submit}
         className="query-form"
       >
@@ -97,19 +103,18 @@ function FundRankPage() {
         <Form.Item name="keyword" label="关键字">
           <Input allowClear placeholder="代码 / 基金名称" />
         </Form.Item>
-        <Form.Item name="page" label="页码" rules={[{ required: true }]}>
-          <InputNumber min={1} />
-        </Form.Item>
-        <Form.Item name="page_size" label="每页" rules={[{ required: true }]}>
-          <InputNumber min={1} max={200} />
-        </Form.Item>
         <Form.Item>
           <Button type="primary" icon={<SearchOutlined />} htmlType="submit" loading={loading}>
             查询
           </Button>
         </Form.Item>
       </Form>
-      <PagedTable data={rankList} columns={columns} loading={loading} />
+      <PagedTable
+        data={rankList}
+        columns={columns}
+        loading={loading}
+        onPageChange={(page, pageSize) => loadRank(form.getFieldsValue(), page, pageSize)}
+      />
     </Card>
   )
 }

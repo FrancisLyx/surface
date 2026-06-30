@@ -45,6 +45,55 @@ Start deployment:
 bash deploy/deploy.sh
 ```
 
+Default branch is `master`. Deploy another branch:
+
+```bash
+bash deploy/deploy.sh dev
+```
+
+Or:
+
+```bash
+SURFACE_GIT_BRANCH=dev bash deploy/deploy.sh
+```
+
+This deploys the backend container and frontend static files together.
+The frontend build output is synced into:
+
+```bash
+/var/www/finance.liuyixuan.site/current
+```
+
+Override target directory if needed:
+
+```bash
+SURFACE_WEB_TARGET=/var/www/another-site/current bash deploy/deploy.sh
+```
+
+Deploy frontend static files:
+
+```bash
+bash deploy/deploy-web.sh
+```
+
+The frontend-only script also defaults to `master`; pass a branch the same way:
+
+```bash
+bash deploy/deploy-web.sh dev
+```
+
+The frontend-only script builds `web/dist` and syncs the contents into:
+
+```bash
+/var/www/finance.liuyixuan.site/current
+```
+
+Override target directory if needed:
+
+```bash
+SURFACE_WEB_TARGET=/var/www/another-site/current bash deploy/deploy-web.sh
+```
+
 ## Common Commands
 
 View containers:

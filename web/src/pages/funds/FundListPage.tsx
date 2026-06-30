@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
-import { Button, Card, Form, Input, InputNumber, message } from 'antd'
+import { Button, Card, Form, Input, Space, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { SearchOutlined } from '@ant-design/icons'
+import { PlusOutlined, SearchOutlined, StarFilled } from '@ant-design/icons'
 import {
+  addFavoriteFund,
   listFunds,
   type FundItem,
   type FundSearchRequest,
@@ -15,6 +16,9 @@ function FundListPage() {
   const [form] = Form.useForm<FundSearchRequest>()
   const [fundList, setFundList] = useState<PageResponse<FundItem>>()
   const [loading, setLoading] = useState(false)
+  const [favoriteCodes, setFavoriteCodes] = useState<Set<string>>(new Set())
+  const [favoriteLoadingCode, setFavoriteLoadingCode] = useState<string>()
+  const [pagination, setPagination] = useState({ page: 1, page_size: 10 })
 
   const columns: ColumnsType<FundItem> = useMemo(
     () => [
@@ -23,23 +27,66 @@ function FundListPage() {
       { title: '基金类型', dataIndex: 'fund_type', width: 160 },
       { title: '拼音缩写', dataIndex: 'abbreviation', width: 120 },
       { title: '拼音全称', dataIndex: 'pinyin', ellipsis: true },
+      {
+        title: '操作',
+        key: 'action',
+        width: 120,
+        fixed: 'right',
+        render: (_, record) => {
+          const favorited = favoriteCodes.has(record.code)
+          return (
+            <Button
+              type={favorited ? 'default' : 'primary'}
+              icon={favorited ? <StarFilled /> : <PlusOutlined />}
+              size="small"
+              loading={favoriteLoadingCode === record.code}
+              disabled={favorited}
+              onClick={() => addToFavorite(record)}
+            >
+              {favorited ? '已自选' : '加自选'}
+            </Button>
+          )
+        },
+      },
     ],
-    [],
+    [favoriteCodes, favoriteLoadingCode],
   )
 
-  const submit = async (values: FundSearchRequest) => {
+  const loadFunds = async (values: FundSearchRequest, page = pagination.page, pageSize = pagination.page_size) => {
     setLoading(true)
     try {
       const data = await listFunds({
         keyword: values.keyword?.trim() || undefined,
-        page: values.page,
-        page_size: values.page_size,
+        page,
+        page_size: pageSize,
       })
       setFundList(data)
+      setPagination({ page, page_size: pageSize })
     } catch (error) {
       messageApi.error(error instanceof Error ? error.message : '请求失败')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const submit = async (values: FundSearchRequest) => {
+    await loadFunds(values, 1, pagination.page_size)
+  }
+
+  const addToFavorite = async (fund: FundItem) => {
+    setFavoriteLoadingCode(fund.code)
+    try {
+      await addFavoriteFund({
+        fund_code: fund.code,
+        fund_name: fund.name,
+        fund_type: fund.fund_type,
+      })
+      setFavoriteCodes((previous) => new Set(previous).add(fund.code))
+      messageApi.success('已加入自选')
+    } catch (error) {
+      messageApi.error(error instanceof Error ? error.message : '加入自选失败')
+    } finally {
+      setFavoriteLoadingCode(undefined)
     }
   }
 
@@ -49,26 +96,27 @@ function FundListPage() {
       <Form
         form={form}
         layout="inline"
-        initialValues={{ keyword: '华夏', page: 1, page_size: 10 }}
+        initialValues={{ keyword: '华夏' }}
         onFinish={submit}
         className="query-form"
       >
         <Form.Item name="keyword" label="关键字">
           <Input allowClear placeholder="代码 / 简称 / 拼音" />
         </Form.Item>
-        <Form.Item name="page" label="页码" rules={[{ required: true }]}>
-          <InputNumber min={1} />
-        </Form.Item>
-        <Form.Item name="page_size" label="每页" rules={[{ required: true }]}>
-          <InputNumber min={1} max={200} />
-        </Form.Item>
         <Form.Item>
-          <Button type="primary" icon={<SearchOutlined />} htmlType="submit" loading={loading}>
-            查询
-          </Button>
+          <Space>
+            <Button type="primary" icon={<SearchOutlined />} htmlType="submit" loading={loading}>
+              查询
+            </Button>
+          </Space>
         </Form.Item>
       </Form>
-      <PagedTable data={fundList} columns={columns} loading={loading} />
+      <PagedTable
+        data={fundList}
+        columns={columns}
+        loading={loading}
+        onPageChange={(page, pageSize) => loadFunds(form.getFieldsValue(), page, pageSize)}
+      />
     </Card>
   )
 }

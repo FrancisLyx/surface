@@ -56,19 +56,23 @@ def list_fund_estimations(
     page_size: int = 20,
     category: str = "全部",
 ) -> PageResponse[FundEstimationItem]:
-    estimation_df = _load_fund_estimations(category)
+    items = list_all_fund_estimations(category)
     normalized_keyword = keyword.strip().lower() if keyword else None
-    items: list[FundEstimationItem] = []
+    filtered_items: list[FundEstimationItem] = []
 
-    for _, row in estimation_df.iterrows():
-        item = _build_fund_estimation_item(row, estimation_df.columns)
+    for item in items:
         searchable_text = f"{item.code} {item.name}".lower()
         if normalized_keyword and normalized_keyword not in searchable_text:
             continue
 
-        items.append(item)
+        filtered_items.append(item)
 
-    return paginate(items, page=page, page_size=page_size)
+    return paginate(filtered_items, page=page, page_size=page_size)
+
+
+def list_all_fund_estimations(category: str = "全部") -> list[FundEstimationItem]:
+    estimation_df = _load_fund_estimations(category)
+    return [_build_fund_estimation_item(row, estimation_df.columns) for _, row in estimation_df.iterrows()]
 
 
 def list_fund_rank(
@@ -207,16 +211,20 @@ def _build_fund_estimation_item(row, columns) -> FundEstimationItem:
     published_nav_column = _find_column(columns, "公布数据-单位净值")
     published_growth_column = _find_column(columns, "公布数据-日增长率")
     previous_nav_column = _find_column(columns, "单位净值", exclude="公布数据")
+    estimate_date = _extract_date(estimated_nav_column)
+    published_date = _extract_date(published_nav_column)
+    estimate_deviation = str(row.get("估算偏差", ""))
 
     return FundEstimationItem(
         code=str(row.get("基金代码", "")),
         name=str(row.get("基金名称", "")),
-        estimate_date=_extract_date(estimated_nav_column),
+        estimate_date=estimate_date,
         estimated_nav=str(row.get(estimated_nav_column, "")),
         estimated_growth_rate=str(row.get(estimated_growth_column, "")),
+        published_date=published_date,
         published_nav=str(row.get(published_nav_column, "")),
         published_growth_rate=str(row.get(published_growth_column, "")),
-        estimate_deviation=str(row.get("估算偏差", "")),
+        estimate_deviation=estimate_deviation if estimate_date == published_date else "",
         previous_nav_date=_extract_date(previous_nav_column),
         previous_nav=str(row.get(previous_nav_column, "")),
     )
