@@ -82,10 +82,7 @@ function FundRankPage() {
   }
 
   const handlePageChange = (page: number, pageSize: number) => {
-    const values = form.getFieldsValue()
-    const nextValues = { ...values, page, page_size: pageSize }
-    form.setFieldsValue(nextValues)
-    void submit(nextValues)
+    void loadRank(form.getFieldsValue(), page, pageSize)
   }
 
   return (
@@ -120,7 +117,7 @@ function FundRankPage() {
         data={rankList}
         columns={columns}
         loading={loading}
-        onPageChange={(page, pageSize) => loadRank(form.getFieldsValue(), page, pageSize)}
+        onPageChange={handlePageChange}
       />
     </Card>
   )
