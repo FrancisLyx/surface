@@ -122,7 +122,7 @@ bash deploy/deploy.sh
 - 拉取指定分支代码
 - 构建并重启后端 Docker 容器
 - 构建前端
-- 将 `web/dist/` 里的内容同步到 `/var/www/finance.liuyixuan.site/current/`
+- 将 `web/dist/` 里的内容同步到对应目录
 
 指定部署分支：
 
