@@ -127,9 +127,27 @@ function LatestNavCard(props: { latestNav: FundLatestNavItem }) {
 }
 
 export function RateTag(props: { value: string }) {
-  const normalized = props.value.replace('%', '')
+  const displayValue = formatRate(props.value)
+  const normalized = displayValue.replace('%', '')
   const numeric = Number(normalized)
   const color = Number.isFinite(numeric) && numeric >= 0 ? 'red' : 'green'
 
-  return <Tag color={props.value && props.value !== '---' ? color : 'default'}>{props.value || '-'}</Tag>
+  return <Tag color={displayValue !== '-' && displayValue !== '---' ? color : 'default'}>{displayValue}</Tag>
+}
+
+function formatRate(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return '-'
+  }
+  if (trimmed === '---' || trimmed.endsWith('%')) {
+    return trimmed
+  }
+
+  const numeric = Number(trimmed)
+  if (Number.isFinite(numeric)) {
+    return `${trimmed}%`
+  }
+
+  return trimmed
 }

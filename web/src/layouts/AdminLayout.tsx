@@ -1,31 +1,25 @@
 import {
   FundOutlined,
-  FundProjectionScreenOutlined,
-  LineChartOutlined,
-  ProfileOutlined,
-  UnorderedListOutlined,
 } from '@ant-design/icons'
 import { Layout, Menu, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { appRoutes, defaultRoutePath } from '../utils/route'
 
 const { Header, Sider, Content } = Layout
 
-const menuRoutes = [
-  { key: '/funds', label: '基金列表', icon: <UnorderedListOutlined /> },
-  { key: '/funds/estimations', label: '净值估算', icon: <LineChartOutlined /> },
-  { key: '/funds/detail', label: '基金详情', icon: <ProfileOutlined /> },
-  { key: '/funds/value', label: '净值查询', icon: <FundProjectionScreenOutlined /> },
-]
-
-const menuItems: MenuProps['items'] = menuRoutes
+const menuItems: MenuProps['items'] = appRoutes.map((route) => ({
+  key: route.path,
+  label: route.label,
+  icon: route.icon,
+}))
 
 function AdminLayout() {
   const location = useLocation()
   const navigate = useNavigate()
 
   const selectedKey =
-    menuRoutes.find((item) => item.key === location.pathname)?.key ?? '/funds'
+    appRoutes.find((item) => item.path === location.pathname)?.path ?? defaultRoutePath
 
   return (
     <Layout className="app-shell">

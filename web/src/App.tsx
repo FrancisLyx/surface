@@ -1,10 +1,7 @@
 import { ConfigProvider, theme } from 'antd'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import AdminLayout from './layouts/AdminLayout'
-import FundDetailPage from './pages/funds/FundDetailPage'
-import FundEstimationsPage from './pages/funds/FundEstimationsPage'
-import FundListPage from './pages/funds/FundListPage'
-import FundValuePage from './pages/funds/FundValuePage'
+import { appRoutes, defaultRoutePath } from './utils/route'
 import './App.css'
 
 function App() {
@@ -22,12 +19,12 @@ function App() {
     >
       <Routes>
         <Route element={<AdminLayout />}>
-          <Route index element={<Navigate to="/funds" replace />} />
-          <Route path="/funds" element={<FundListPage />} />
-          <Route path="/funds/estimations" element={<FundEstimationsPage />} />
-          <Route path="/funds/detail" element={<FundDetailPage />} />
-          <Route path="/funds/value" element={<FundValuePage />} />
-          <Route path="*" element={<Navigate to="/funds" replace />} />
+          <Route index element={<Navigate to={defaultRoutePath} replace />} />
+          {appRoutes.map((route) => {
+            const Page = route.component
+            return <Route key={route.path} path={route.path} element={<Page />} />
+          })}
+          <Route path="*" element={<Navigate to={defaultRoutePath} replace />} />
         </Route>
       </Routes>
     </ConfigProvider>

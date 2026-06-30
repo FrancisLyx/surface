@@ -4,8 +4,12 @@ from app.api.routes.fund.fund_schema import (
     FundDetailItem,
     FundDetailResponse,
     FundEstimationItem,
+    FundFeeSection,
     FundItem,
     FundLatestNavItem,
+    FundProfileRequest,
+    FundProfileResponse,
+    FundRankItem,
     FundValueRequest,
     FundValueResponse,
 )
@@ -67,6 +71,31 @@ def list_fund_estimations(
     return paginate(items, page=page, page_size=page_size)
 
 
+def list_fund_rank(
+    category: str = "全部",
+    keyword: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> PageResponse[FundRankItem]:
+    try:
+        rank_df = akshare_client.get_open_fund_rank(category)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"AkShare fund rank query failed: {exc}") from exc
+
+    normalized_keyword = keyword.strip().lower() if keyword else None
+    items: list[FundRankItem] = []
+
+    for _, row in rank_df.iterrows():
+        item = _build_fund_rank_item(row)
+        searchable_text = f"{item.code} {item.name} {item.fund_type}".lower()
+        if normalized_keyword and normalized_keyword not in searchable_text:
+            continue
+
+        items.append(item)
+
+    return paginate(items, page=page, page_size=page_size)
+
+
 def get_fund_value(request: FundValueRequest) -> FundValueResponse:
     fund_code = request.fund_code.strip()
     if not fund_code:
@@ -114,6 +143,30 @@ def get_fund_detail(symbol: str) -> FundDetailResponse:
         for _, row in detail_df.iterrows()
     ]
     return FundDetailResponse(symbol=symbol, items=items)
+
+
+def get_fund_profile(request: FundProfileRequest) -> FundProfileResponse:
+    symbol = request.symbol.strip()
+    year = request.year.strip()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="symbol is required")
+    if not year:
+        raise HTTPException(status_code=400, detail="year is required")
+
+    basic_info = get_fund_detail(symbol).items
+
+    return FundProfileResponse(
+        symbol=symbol,
+        year=year,
+        basic_info=basic_info,
+        fee_sections=_load_profile_fee_sections(symbol),
+        holdings=_load_profile_rows(
+            lambda: akshare_client.get_fund_portfolio_hold(symbol, year),
+        ),
+        industry_allocations=_load_profile_rows(
+            lambda: akshare_client.get_fund_industry_allocation(symbol, year),
+        ),
+    )
 
 
 def find_fund_estimation(fund_code: str) -> FundEstimationItem | None:
@@ -186,6 +239,53 @@ def _build_fund_latest_nav_item(row, columns) -> FundLatestNavItem:
         redemption_status=str(row.get("赎回状态", "")),
         fee=str(row.get("手续费", "")),
     )
+
+
+def _build_fund_rank_item(row) -> FundRankItem:
+    return FundRankItem(
+        code=str(row.get("基金代码", "")),
+        name=str(row.get("基金简称", row.get("基金名称", ""))),
+        fund_type=str(row.get("基金类型", "")),
+        unit_nav=str(row.get("单位净值", "")),
+        accumulated_nav=str(row.get("累计净值", "")),
+        daily_growth_rate=str(row.get("日增长率", "")),
+        weekly_growth_rate=str(row.get("近1周", "")),
+        monthly_growth_rate=str(row.get("近1月", "")),
+        quarterly_growth_rate=str(row.get("近3月", "")),
+        half_year_growth_rate=str(row.get("近6月", "")),
+        yearly_growth_rate=str(row.get("近1年", "")),
+        current_year_growth_rate=str(row.get("今年来", "")),
+        since_inception_growth_rate=str(row.get("成立来", "")),
+        fee=str(row.get("手续费", "")),
+    )
+
+
+def _load_profile_fee_sections(symbol: str) -> list[FundFeeSection]:
+    sections: list[FundFeeSection] = []
+    for indicator in ["申购费率（前端）", "赎回费率", "运作费用"]:
+        rows = _load_profile_rows(lambda indicator=indicator: akshare_client.get_fund_fee(symbol, indicator))
+        sections.append(FundFeeSection(title=indicator, rows=rows))
+    return sections
+
+
+def _load_profile_rows(loader) -> list[dict[str, str]]:
+    try:
+        data_frame = loader()
+    except Exception:
+        return []
+
+    rows: list[dict[str, str]] = []
+    for _, row in data_frame.iterrows():
+        rows.append({str(key): str(value) for key, value in _row_items(row)})
+    return rows
+
+
+def _row_items(row):
+    if hasattr(row, "items"):
+        return row.items()
+    if isinstance(row, dict):
+        return row.items()
+    return []
 
 
 def _find_column(columns, include: str, exclude: str | None = None) -> str:

@@ -350,3 +350,172 @@ def test_post_fund_value_auto_falls_back_to_daily_nav(monkeypatch):
         "redemption_status": "开放赎回",
         "fee": "0.15%",
     }
+
+
+def test_list_fund_rank_filters_by_keyword_and_category(monkeypatch):
+    class FundRankData:
+        def fillna(self, value):
+            return self
+
+        def iterrows(self):
+            rows = [
+                {
+                    "基金代码": "000001",
+                    "基金简称": "华夏成长混合",
+                    "基金类型": "混合型",
+                    "单位净值": "1.2345",
+                    "累计净值": "3.4567",
+                    "日增长率": "1.23%",
+                    "近1周": "2.34%",
+                    "近1月": "3.45%",
+                    "近3月": "4.56%",
+                    "近6月": "5.67%",
+                    "近1年": "6.78%",
+                    "今年来": "7.89%",
+                    "成立来": "88.88%",
+                    "手续费": "0.15%",
+                },
+                {
+                    "基金代码": "000003",
+                    "基金简称": "中海可转债债券A",
+                    "基金类型": "债券型",
+                    "单位净值": "1.0001",
+                    "累计净值": "1.1001",
+                    "日增长率": "0.01%",
+                    "近1周": "0.02%",
+                    "近1月": "0.03%",
+                    "近3月": "0.04%",
+                    "近6月": "0.05%",
+                    "近1年": "0.06%",
+                    "今年来": "0.07%",
+                    "成立来": "0.08%",
+                    "手续费": "0.10%",
+                },
+            ]
+            yield from enumerate(rows)
+
+    captured_categories = []
+    monkeypatch.setattr(
+        akshare_client,
+        "get_open_fund_rank",
+        lambda category="全部": captured_categories.append(category) or FundRankData(),
+    )
+
+    response = TestClient(app).post(
+        "/api/v1/funds/rank",
+        json={"category": "混合型", "keyword": "华夏", "page": 1, "page_size": 10},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["code"] == 200
+    assert captured_categories == ["混合型"]
+    assert response.json()["data"] == {
+        "page": 1,
+        "page_size": 10,
+        "total": 1,
+        "pages": 1,
+        "items": [
+            {
+                "code": "000001",
+                "name": "华夏成长混合",
+                "fund_type": "混合型",
+                "unit_nav": "1.2345",
+                "accumulated_nav": "3.4567",
+                "daily_growth_rate": "1.23%",
+                "weekly_growth_rate": "2.34%",
+                "monthly_growth_rate": "3.45%",
+                "quarterly_growth_rate": "4.56%",
+                "half_year_growth_rate": "5.67%",
+                "yearly_growth_rate": "6.78%",
+                "current_year_growth_rate": "7.89%",
+                "since_inception_growth_rate": "88.88%",
+                "fee": "0.15%",
+            }
+        ],
+    }
+
+
+def test_get_fund_profile_returns_aggregated_sections_when_child_query_fails(monkeypatch):
+    class FundDetailData:
+        def fillna(self, value):
+            return self
+
+        def iterrows(self):
+            rows = [
+                {"item": "基金名称", "value": "华夏成长混合"},
+                {"item": "基金类型", "value": "混合型"},
+            ]
+            yield from enumerate(rows)
+
+    class FeeData:
+        def fillna(self, value):
+            return self
+
+        def iterrows(self):
+            rows = [{"费用类型": "申购金额<100万", "费率": "0.15%"}]
+            yield from enumerate(rows)
+
+    class HoldingData:
+        def fillna(self, value):
+            return self
+
+        def iterrows(self):
+            rows = [
+                {
+                    "股票代码": "600519",
+                    "股票名称": "贵州茅台",
+                    "占净值比例": "8.88%",
+                    "持股数": "10000",
+                    "持仓市值": "18000000",
+                }
+            ]
+            yield from enumerate(rows)
+
+    monkeypatch.setattr(akshare_client, "get_fund_detail", lambda symbol: FundDetailData())
+    monkeypatch.setattr(akshare_client, "get_fund_fee", lambda symbol, indicator: FeeData())
+    monkeypatch.setattr(akshare_client, "get_fund_portfolio_hold", lambda symbol, year: HoldingData())
+
+    def raise_industry_error(symbol, year):
+        raise RuntimeError("industry source down")
+
+    monkeypatch.setattr(akshare_client, "get_fund_industry_allocation", raise_industry_error)
+
+    response = TestClient(app).post(
+        "/api/v1/funds/profile",
+        json={"symbol": "000001", "year": "2024"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["code"] == 200
+    assert response.json()["data"] == {
+        "symbol": "000001",
+        "year": "2024",
+        "basic_info": [
+            {"item": "基金名称", "value": "华夏成长混合"},
+            {"item": "基金类型", "value": "混合型"},
+        ],
+        "fee_sections": [
+            {
+                "title": "申购费率（前端）",
+                "rows": [{"费用类型": "申购金额<100万", "费率": "0.15%"}],
+            },
+            {
+                "title": "赎回费率",
+                "rows": [{"费用类型": "申购金额<100万", "费率": "0.15%"}],
+            },
+            {
+                "title": "运作费用",
+                "rows": [{"费用类型": "申购金额<100万", "费率": "0.15%"}],
+            },
+        ],
+        "holdings": [
+            {
+                "股票代码": "600519",
+                "股票名称": "贵州茅台",
+                "占净值比例": "8.88%",
+                "持股数": "10000",
+                "持仓市值": "18000000",
+            }
+        ],
+        "industry_allocations": [],
+    }

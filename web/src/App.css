@@ -113,6 +113,36 @@
   gap: 14px;
 }
 
+.page-stack {
+  width: 100%;
+}
+
+.fee-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.profile-title.ant-typography {
+  margin: 2px 0 0;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.profile-summary-descriptions {
+  margin-top: 16px;
+}
+
+.profile-summary-descriptions .ant-descriptions-item-label,
+.profile-summary-descriptions .ant-descriptions-item-content,
+.tool-panel .ant-descriptions-item-label {
+  vertical-align: top;
+}
+
+.tool-panel .ant-descriptions-item-label {
+  white-space: nowrap;
+}
+
 @media (max-width: 991px) {
   .app-header {
     padding: 0 16px;
@@ -127,6 +157,10 @@
   }
 
   .split-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .fee-grid {
     grid-template-columns: 1fr;
   }
 

@@ -1,4 +1,4 @@
-import { post } from './request'
+import { post } from '../utils/request'
 
 export type PageResponse<T> = {
   page: number
@@ -27,6 +27,23 @@ export type FundEstimationItem = {
   estimate_deviation: string
   previous_nav_date: string
   previous_nav: string
+}
+
+export type FundRankItem = {
+  code: string
+  name: string
+  fund_type: string
+  unit_nav: string
+  accumulated_nav: string
+  daily_growth_rate: string
+  weekly_growth_rate: string
+  monthly_growth_rate: string
+  quarterly_growth_rate: string
+  half_year_growth_rate: string
+  yearly_growth_rate: string
+  current_year_growth_rate: string
+  since_inception_growth_rate: string
+  fee: string
 }
 
 export type FundDetailItem = {
@@ -59,6 +76,20 @@ export type FundValueResponse = {
   latest_nav: FundLatestNavItem | null
 }
 
+export type FundFeeSection = {
+  title: string
+  rows: Record<string, string>[]
+}
+
+export type FundProfileResponse = {
+  symbol: string
+  year: string
+  basic_info: FundDetailItem[]
+  fee_sections: FundFeeSection[]
+  holdings: Record<string, string>[]
+  industry_allocations: Record<string, string>[]
+}
+
 export type FundSearchRequest = {
   keyword?: string
   page: number
@@ -69,8 +100,17 @@ export type FundEstimationSearchRequest = FundSearchRequest & {
   category: string
 }
 
+export type FundRankSearchRequest = FundSearchRequest & {
+  category: string
+}
+
 export type FundSymbolRequest = {
   symbol: string
+}
+
+export type FundProfileRequest = {
+  symbol: string
+  year: string
 }
 
 export type FundValueRequest = {
@@ -86,8 +126,16 @@ export function listFundEstimations(request: FundEstimationSearchRequest) {
   return post<PageResponse<FundEstimationItem>>('/funds/estimations/search', request)
 }
 
+export function listFundRank(request: FundRankSearchRequest) {
+  return post<PageResponse<FundRankItem>>('/funds/rank', request)
+}
+
 export function getFundDetail(request: FundSymbolRequest) {
   return post<FundDetailResponse>('/funds/detail', request)
+}
+
+export function getFundProfile(request: FundProfileRequest) {
+  return post<FundProfileResponse>('/funds/profile', request)
 }
 
 export function getFundEstimation(request: FundSymbolRequest) {

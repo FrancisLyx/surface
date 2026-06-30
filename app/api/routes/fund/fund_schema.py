@@ -16,8 +16,20 @@ class FundEstimationSearchRequest(BaseModel):
     category: str = Field(default="全部", description="基金分类")
 
 
+class FundRankSearchRequest(BaseModel):
+    category: str = Field(default="全部", description="基金分类")
+    keyword: str | None = Field(default=None, description="基金代码或基金名称关键字")
+    page: int = Field(default=1, ge=1, description="页码")
+    page_size: int = Field(default=20, ge=1, le=200, description="每页条数")
+
+
 class FundSymbolRequest(BaseModel):
     symbol: str = Field(description="基金代码")
+
+
+class FundProfileRequest(BaseModel):
+    symbol: str = Field(description="基金代码")
+    year: str = Field(default="2024", description="查询年份")
 
 
 class FundItem(BaseModel):
@@ -39,6 +51,23 @@ class FundEstimationItem(BaseModel):
     estimate_deviation: str = Field(description="估算偏差")
     previous_nav_date: str = Field(description="上一交易日净值日期")
     previous_nav: str = Field(description="上一交易日单位净值")
+
+
+class FundRankItem(BaseModel):
+    code: str = Field(description="基金代码")
+    name: str = Field(description="基金简称")
+    fund_type: str = Field(description="基金类型")
+    unit_nav: str = Field(description="单位净值")
+    accumulated_nav: str = Field(description="累计净值")
+    daily_growth_rate: str = Field(description="日增长率")
+    weekly_growth_rate: str = Field(description="近1周")
+    monthly_growth_rate: str = Field(description="近1月")
+    quarterly_growth_rate: str = Field(description="近3月")
+    half_year_growth_rate: str = Field(description="近6月")
+    yearly_growth_rate: str = Field(description="近1年")
+    current_year_growth_rate: str = Field(description="今年来")
+    since_inception_growth_rate: str = Field(description="成立来")
+    fee: str = Field(description="手续费")
 
 
 class FundLatestNavItem(BaseModel):
@@ -74,3 +103,17 @@ class FundDetailItem(BaseModel):
 class FundDetailResponse(BaseModel):
     symbol: str
     items: list[FundDetailItem]
+
+
+class FundFeeSection(BaseModel):
+    title: str
+    rows: list[dict[str, str]]
+
+
+class FundProfileResponse(BaseModel):
+    symbol: str
+    year: str
+    basic_info: list[FundDetailItem]
+    fee_sections: list[FundFeeSection]
+    holdings: list[dict[str, str]]
+    industry_allocations: list[dict[str, str]]

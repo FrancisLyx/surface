@@ -2,6 +2,8 @@ from fastapi import APIRouter, Request
 
 from app.api.routes.fund.fund_schema import (
     FundEstimationSearchRequest,
+    FundProfileRequest,
+    FundRankSearchRequest,
     FundSearchRequest,
     FundSymbolRequest,
     FundValueRequest,
@@ -37,6 +39,19 @@ def list_fund_estimations(request: Request, payload: FundEstimationSearchRequest
     )
 
 
+@router.post("/funds/rank", response_model=ApiResponse, summary="查询开放基金排行")
+def list_fund_rank(request: Request, payload: FundRankSearchRequest) -> ApiResponse:
+    return success_response(
+        request,
+        fund_service.list_fund_rank(
+            category=payload.category,
+            keyword=payload.keyword,
+            page=payload.page,
+            page_size=payload.page_size,
+        ),
+    )
+
+
 @router.post("/funds/value", response_model=ApiResponse, summary="按来源查询基金净值")
 def get_fund_value(request: Request, payload: FundValueRequest) -> ApiResponse:
     return success_response(request, fund_service.get_fund_value(payload))
@@ -50,3 +65,8 @@ def get_fund_estimation(request: Request, payload: FundSymbolRequest) -> ApiResp
 @router.post("/funds/detail", response_model=ApiResponse, summary="查询基金详情")
 def get_fund_detail(request: Request, payload: FundSymbolRequest) -> ApiResponse:
     return success_response(request, fund_service.get_fund_detail(payload.symbol))
+
+
+@router.post("/funds/profile", response_model=ApiResponse, summary="查询基金画像")
+def get_fund_profile(request: Request, payload: FundProfileRequest) -> ApiResponse:
+    return success_response(request, fund_service.get_fund_profile(payload))
