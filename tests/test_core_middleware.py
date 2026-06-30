@@ -6,14 +6,14 @@ from app.main import app
 def test_request_middleware_adds_request_id_and_process_time_headers():
     request_id = "test-request-id"
 
-    response = TestClient(app).get("/funds/not-exist", headers={"X-Request-ID": request_id})
+    response = TestClient(app).get("/api/v1/funds/not-exist", headers={"X-Request-ID": request_id})
 
     assert response.headers["X-Request-ID"] == request_id
     assert "X-Process-Time" in response.headers
 
 
 def test_http_exception_response_uses_standard_error_shape():
-    response = TestClient(app).post("/funds/value", json={"fund_code": "", "source": "daily"})
+    response = TestClient(app).post("/api/v1/funds/value", json={"fund_code": "", "source": "daily"})
 
     assert response.status_code == 400
     assert response.json() == {

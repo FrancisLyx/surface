@@ -7,5 +7,4 @@ from app.core.middleware import register_request_middleware
 app = FastAPI(title="Surface API")
 register_request_middleware(app)
 register_exception_handlers(app)
-app.include_router(fund_router)
-
+app.include_router(fund_router, prefix="/api/v1")

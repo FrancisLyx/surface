@@ -31,7 +31,7 @@ def test_list_funds_filters_by_keyword(monkeypatch):
     monkeypatch.setattr(akshare_client, "get_fund_names", lambda: FundNameData())
 
     response = TestClient(app).post(
-        "/funds/list",
+        "/api/v1/funds/list",
         json={"keyword": "华夏", "page": 1, "page_size": 10},
     )
 
@@ -70,7 +70,7 @@ def test_get_fund_detail(monkeypatch):
 
     monkeypatch.setattr(akshare_client, "get_fund_detail", lambda symbol: FundDetailData())
 
-    response = TestClient(app).post("/funds/detail", json={"symbol": "000001"})
+    response = TestClient(app).post("/api/v1/funds/detail", json={"symbol": "000001"})
 
     assert response.status_code == 200
     assert response.json()["code"] == 200
@@ -136,7 +136,7 @@ def test_list_fund_estimations_filters_by_keyword(monkeypatch):
     )
 
     response = TestClient(app).post(
-        "/funds/estimations/search",
+        "/api/v1/funds/estimations/search",
         json={"keyword": "华夏", "page": 1, "page_size": 10},
     )
 
@@ -205,7 +205,7 @@ def test_get_fund_estimation_by_symbol(monkeypatch):
         lambda category="全部": FundEstimationData(),
     )
 
-    response = TestClient(app).post("/funds/estimation", json={"symbol": "000001"})
+    response = TestClient(app).post("/api/v1/funds/estimation", json={"symbol": "000001"})
 
     assert response.status_code == 200
     assert response.json()["code"] == 200
@@ -255,7 +255,7 @@ def test_post_fund_value_returns_estimation_source(monkeypatch):
     )
 
     response = TestClient(app).post(
-        "/funds/value",
+        "/api/v1/funds/value",
         json={"fund_code": "000001", "source": "estimation"},
     )
 
@@ -327,7 +327,7 @@ def test_post_fund_value_auto_falls_back_to_daily_nav(monkeypatch):
     monkeypatch.setattr(akshare_client, "get_open_fund_daily", lambda: DailyNavData())
 
     response = TestClient(app).post(
-        "/funds/value",
+        "/api/v1/funds/value",
         json={"fund_code": "110029", "source": "auto"},
     )
 
