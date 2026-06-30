@@ -40,7 +40,7 @@ function FundValuePage() {
         className="query-form"
       >
         <Form.Item name="fund_code" label="基金代码" rules={[{ required: true }]}>
-          <Input placeholder="110029" />
+          <Input autoComplete="off" placeholder="110029" />
         </Form.Item>
         <Form.Item name="source" label="来源">
           <Select

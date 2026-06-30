@@ -86,7 +86,7 @@ function FundEstimationsPage() {
         className="query-form"
       >
         <Form.Item name="keyword" label="关键字">
-          <Input allowClear placeholder="代码 / 基金名称" />
+          <Input allowClear autoComplete="off" placeholder="代码 / 基金名称" />
         </Form.Item>
         <Form.Item name="category" label="分类">
           <Select

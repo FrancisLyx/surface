@@ -56,10 +56,10 @@ function FundProfilePage() {
           className="query-form no-divider"
         >
           <Form.Item name="symbol" label="基金代码" rules={[{ required: true }]}>
-            <Input placeholder="000001" />
+            <Input autoComplete="off" placeholder="000001" />
           </Form.Item>
           <Form.Item name="year" label="年份" rules={[{ required: true }]}>
-            <Input placeholder="2024" />
+            <Input autoComplete="off" placeholder="2024" />
           </Form.Item>
           <Form.Item>
             <Button type="primary" icon={<SearchOutlined />} htmlType="submit" loading={loading}>

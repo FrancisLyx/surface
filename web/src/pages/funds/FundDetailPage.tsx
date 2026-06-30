@@ -55,7 +55,7 @@ function FundDetailPage() {
             className="query-form compact"
           >
             <Form.Item name="symbol" label="基金代码" rules={[{ required: true }]}>
-              <Input placeholder="000001" />
+              <Input autoComplete="off" placeholder="000001" />
             </Form.Item>
             <Form.Item>
               <Button
@@ -79,7 +79,7 @@ function FundDetailPage() {
             className="query-form compact"
           >
             <Form.Item name="symbol" label="基金代码" rules={[{ required: true }]}>
-              <Input placeholder="000001" />
+              <Input autoComplete="off" placeholder="000001" />
             </Form.Item>
             <Form.Item>
               <Button

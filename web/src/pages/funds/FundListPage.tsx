@@ -101,7 +101,7 @@ function FundListPage() {
         className="query-form"
       >
         <Form.Item name="keyword" label="关键字">
-          <Input allowClear placeholder="代码 / 简称 / 拼音" />
+          <Input allowClear autoComplete="off" placeholder="代码 / 简称 / 拼音" />
         </Form.Item>
         <Form.Item>
           <Space>
