@@ -207,54 +207,27 @@ def test_list_favorite_fund_options_are_scoped_to_current_user(monkeypatch):
 def test_list_favorite_fund_estimations(monkeypatch):
     monkeypatch.setenv("USER_REGISTRATION_ENABLED", "true")
 
-    class FundEstimationData:
-        def fillna(self, value):
-            return self
-
-        @property
-        def columns(self):
-            return [
-                "基金代码",
-                "基金名称",
-                "2026-06-29-估算数据-估算值",
-                "2026-06-29-估算数据-估算增长率",
-                "2026-06-29-公布数据-单位净值",
-                "2026-06-29-公布数据-日增长率",
-                "估算偏差",
-                "2026-06-26-单位净值",
-            ]
-
-        def iterrows(self):
-            rows = [
-                {
-                    "基金代码": "000001",
-                    "基金名称": "华夏成长混合",
-                    "2026-06-29-估算数据-估算值": "1.2345",
-                    "2026-06-29-估算数据-估算增长率": "1.23%",
-                    "2026-06-29-公布数据-单位净值": "1.2200",
-                    "2026-06-29-公布数据-日增长率": "0.33%",
-                    "估算偏差": "0.01%",
-                    "2026-06-26-单位净值": "1.2160",
-                },
-                {
-                    "基金代码": "000003",
-                    "基金名称": "中海可转债债券A",
-                    "2026-06-29-估算数据-估算值": "1.0001",
-                    "2026-06-29-估算数据-估算增长率": "0.01%",
-                    "2026-06-29-公布数据-单位净值": "1.0000",
-                    "2026-06-29-公布数据-日增长率": "0.00%",
-                    "估算偏差": "0.00%",
-                    "2026-06-26-单位净值": "1.0000",
-                },
-            ]
-            yield from enumerate(rows)
-
+    monkeypatch.setattr(
+        akshare_client,
+        "get_fund_realtime_estimation",
+        lambda symbol: {
+            "fundcode": "000001",
+            "name": "华夏成长混合",
+            "jzrq": "2026-06-28",
+            "dwjz": "1.2200",
+            "gsz": "1.2345",
+            "gszzl": "1.23",
+            "gztime": "2026-06-29 14:30",
+        },
+        raising=False,
+    )
     monkeypatch.setattr(
         akshare_client,
         "get_fund_estimations",
-        lambda category="全部": FundEstimationData(),
+        lambda category="全部": (_ for _ in ()).throw(
+            AssertionError("full estimation list should not be loaded for favorite estimations")
+        ),
     )
-    monkeypatch.setattr(akshare_client, "get_open_fund_daily", lambda: EmptyDailyNavData())
 
     client = make_client()
     try:
@@ -282,12 +255,12 @@ def test_list_favorite_fund_estimations(monkeypatch):
             "estimate_date": "2026-06-29",
             "estimated_nav": "1.2345",
             "estimated_growth_rate": "1.23%",
-            "published_date": "2026-06-29",
+            "published_date": "2026-06-28",
             "published_nav": "1.2200",
-            "published_growth_rate": "0.33%",
-            "estimate_deviation": "0.01%",
-            "previous_nav_date": "2026-06-26",
-            "previous_nav": "1.2160",
+            "published_growth_rate": "",
+            "estimate_deviation": "",
+            "previous_nav_date": "2026-06-28",
+            "previous_nav": "1.2200",
             "has_estimation": True,
         }
     finally:
@@ -297,54 +270,40 @@ def test_list_favorite_fund_estimations(monkeypatch):
 def test_get_favorite_fund_report(monkeypatch):
     monkeypatch.setenv("USER_REGISTRATION_ENABLED", "true")
 
-    class FundEstimationData:
-        def fillna(self, value):
-            return self
-
-        @property
-        def columns(self):
-            return [
-                "基金代码",
-                "基金名称",
-                "2026-06-30-估算数据-估算值",
-                "2026-06-30-估算数据-估算增长率",
-                "2026-06-30-公布数据-单位净值",
-                "2026-06-30-公布数据-日增长率",
-                "估算偏差",
-                "2026-06-29-单位净值",
-            ]
-
-        def iterrows(self):
-            rows = [
-                {
-                    "基金代码": "000001",
-                    "基金名称": "华夏成长混合",
-                    "2026-06-30-估算数据-估算值": "1.2345",
-                    "2026-06-30-估算数据-估算增长率": "3.20%",
-                    "2026-06-30-公布数据-单位净值": "1.2200",
-                    "2026-06-30-公布数据-日增长率": "0.33%",
-                    "估算偏差": "2.87%",
-                    "2026-06-29-单位净值": "1.2160",
-                },
-                {
-                    "基金代码": "000003",
-                    "基金名称": "中海可转债债券A",
-                    "2026-06-30-估算数据-估算值": "0.9800",
-                    "2026-06-30-估算数据-估算增长率": "-2.10%",
-                    "2026-06-30-公布数据-单位净值": "1.0000",
-                    "2026-06-30-公布数据-日增长率": "0.00%",
-                    "估算偏差": "-2.10%",
-                    "2026-06-29-单位净值": "1.0000",
-                },
-            ]
-            yield from enumerate(rows)
+    realtime_data = {
+        "000001": {
+            "fundcode": "000001",
+            "name": "华夏成长混合",
+            "jzrq": "2026-06-29",
+            "dwjz": "1.2200",
+            "gsz": "1.2345",
+            "gszzl": "3.20",
+            "gztime": "2026-06-30 14:30",
+        },
+        "000003": {
+            "fundcode": "000003",
+            "name": "中海可转债债券A",
+            "jzrq": "2026-06-29",
+            "dwjz": "1.0000",
+            "gsz": "0.9800",
+            "gszzl": "-2.10",
+            "gztime": "2026-06-30 14:30",
+        },
+    }
 
     monkeypatch.setattr(
         akshare_client,
-        "get_fund_estimations",
-        lambda category="全部": FundEstimationData(),
+        "get_fund_realtime_estimation",
+        lambda symbol: realtime_data[symbol],
+        raising=False,
     )
-    monkeypatch.setattr(akshare_client, "get_open_fund_daily", lambda: EmptyDailyNavData())
+    monkeypatch.setattr(
+        akshare_client,
+        "get_fund_estimations",
+        lambda category="全部": (_ for _ in ()).throw(
+            AssertionError("full estimation list should not be loaded for favorite report")
+        ),
+    )
 
     client = make_client()
     try:
@@ -375,7 +334,7 @@ def test_get_favorite_fund_report(monkeypatch):
             "down_count": 1,
             "flat_count": 0,
             "missing_count": 0,
-            "alert_count": 4,
+            "alert_count": 2,
             "max_up": {"fund_code": "000001", "fund_name": "华夏成长混合", "rate": "3.20%"},
             "max_down": {"fund_code": "000003", "fund_name": "中海可转债债券A", "rate": "-2.10%"},
         }
@@ -387,22 +346,10 @@ def test_get_favorite_fund_report(monkeypatch):
                 "message": "估算涨幅 3.20%",
             },
             {
-                "fund_code": "000001",
-                "fund_name": "华夏成长混合",
-                "level": "warning",
-                "message": "估算偏差 2.87%",
-            },
-            {
                 "fund_code": "000003",
                 "fund_name": "中海可转债债券A",
                 "level": "warning",
                 "message": "估算跌幅 -2.10%",
-            },
-            {
-                "fund_code": "000003",
-                "fund_name": "中海可转债债券A",
-                "level": "warning",
-                "message": "估算偏差 -2.10%",
             },
         ], key=lambda item: (item["fund_code"], item["message"]))
     finally:

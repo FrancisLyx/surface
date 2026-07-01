@@ -73,9 +73,8 @@ def list_fund_estimations(
 
 def list_all_fund_estimations(category: str = "全部") -> list[FundEstimationItem]:
     estimation_df = _load_fund_estimations(category)
-    latest_nav_by_code = _load_latest_nav_index()
     return [
-        _build_fund_estimation_item(row, estimation_df.columns, latest_nav_by_code)
+        _build_fund_estimation_item(row, estimation_df.columns)
         for _, row in estimation_df.iterrows()
     ]
 
@@ -249,12 +248,47 @@ def get_fund_nav_trend_summary(symbol: str) -> dict[str, object]:
 
 
 def find_fund_estimation(fund_code: str) -> FundEstimationItem | None:
+    realtime_item = find_fund_realtime_estimation(fund_code)
+    if realtime_item is not None:
+        return realtime_item
+
     estimation_df = _load_fund_estimations("全部")
     for _, row in estimation_df.iterrows():
         item = _build_fund_estimation_item(row, estimation_df.columns)
         if item.code == fund_code:
             return item
     return None
+
+
+def find_fund_realtime_estimation(fund_code: str) -> FundEstimationItem | None:
+    try:
+        data = akshare_client.get_fund_realtime_estimation(fund_code)
+    except Exception:
+        return None
+
+    code = str(data.get("fundcode", "")).strip()
+    estimated_nav = str(data.get("gsz", "")).strip()
+    if not code or not estimated_nav:
+        return None
+
+    estimate_time = str(data.get("gztime", "")).strip()
+    estimate_date = estimate_time.split(" ")[0] if estimate_time else ""
+    estimated_growth_rate = _format_rate(data.get("gszzl", ""))
+    published_date = str(data.get("jzrq", "")).strip()
+
+    return FundEstimationItem(
+        code=code,
+        name=str(data.get("name", "")).strip(),
+        estimate_date=estimate_date,
+        estimated_nav=estimated_nav,
+        estimated_growth_rate=estimated_growth_rate,
+        published_date=published_date,
+        published_nav=str(data.get("dwjz", "")).strip(),
+        published_growth_rate="",
+        estimate_deviation="",
+        previous_nav_date=published_date,
+        previous_nav=str(data.get("dwjz", "")).strip(),
+    )
 
 
 def find_fund_latest_nav(fund_code: str) -> FundLatestNavItem | None:
@@ -425,6 +459,15 @@ def _parse_float(value) -> float | None:
         return float(value_text)
     except ValueError:
         return None
+
+
+def _format_rate(value) -> str:
+    value_text = str(value).strip()
+    if not value_text:
+        return ""
+    if value_text.endswith("%"):
+        return value_text
+    return f"{value_text}%"
 
 
 def _find_column(columns, include: str, exclude: str | None = None) -> str:

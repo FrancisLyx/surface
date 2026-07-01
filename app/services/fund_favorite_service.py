@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -104,7 +106,7 @@ def list_favorite_fund_estimations(
     page_size: int = 20,
 ) -> PageResponse[FavoriteFundEstimationItem]:
     favorite_page = list_favorite_funds(db, user, keyword=keyword, page=page, page_size=page_size)
-    estimations = {item.code: item for item in fund_service.list_all_fund_estimations("全部")}
+    estimations = _load_favorite_estimations(favorite_page.items)
 
     return PageResponse(
         page=favorite_page.page,
@@ -116,6 +118,28 @@ def list_favorite_fund_estimations(
             for favorite in favorite_page.items
         ],
     )
+
+
+def _load_favorite_estimations(favorites: list[FavoriteFundItem]) -> dict[str, object]:
+    if not favorites:
+        return {}
+
+    max_workers = min(8, len(favorites))
+    estimations: dict[str, object] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_by_code = {
+            executor.submit(fund_service.find_fund_realtime_estimation, favorite.fund_code): favorite.fund_code
+            for favorite in favorites
+        }
+        for future in as_completed(future_by_code):
+            fund_code = future_by_code[future]
+            try:
+                estimation = future.result()
+            except Exception:
+                estimation = None
+            if estimation is not None:
+                estimations[fund_code] = estimation
+    return estimations
 
 
 def get_favorite_fund_report(

@@ -189,6 +189,65 @@ def test_list_fund_estimations_filters_by_keyword(monkeypatch):
     }
 
 
+def test_list_fund_estimations_does_not_query_daily_nav(monkeypatch):
+    class FundEstimationData:
+        def fillna(self, value):
+            return self
+
+        @property
+        def columns(self):
+            return [
+                "基金代码",
+                "基金名称",
+                "2026-06-30-估算数据-估算值",
+                "2026-06-30-估算数据-估算增长率",
+                "2026-06-29-公布数据-单位净值",
+                "2026-06-29-公布数据-日增长率",
+                "估算偏差",
+                "2026-06-29-单位净值",
+            ]
+
+        def iterrows(self):
+            rows = [
+                {
+                    "基金代码": "000001",
+                    "基金名称": "华夏成长混合",
+                    "2026-06-30-估算数据-估算值": "1.2345",
+                    "2026-06-30-估算数据-估算增长率": "1.23%",
+                    "2026-06-29-公布数据-单位净值": "1.2200",
+                    "2026-06-29-公布数据-日增长率": "0.33%",
+                    "估算偏差": "0.88%",
+                    "2026-06-29-单位净值": "1.2200",
+                }
+            ]
+            yield from enumerate(rows)
+
+    daily_nav_call_count = 0
+
+    def count_daily_nav_calls():
+        nonlocal daily_nav_call_count
+        daily_nav_call_count += 1
+        return EmptyDailyNavData()
+
+    monkeypatch.setattr(
+        akshare_client,
+        "get_fund_estimations",
+        lambda category="全部": FundEstimationData(),
+    )
+    monkeypatch.setattr(akshare_client, "get_open_fund_daily", count_daily_nav_calls)
+
+    response = TestClient(app).post(
+        "/api/v1/funds/estimations/search",
+        json={"keyword": "华夏", "page": 1, "page_size": 10},
+    )
+
+    assert response.status_code == 200
+    item = response.json()["data"]["items"][0]
+    assert item["published_date"] == "2026-06-29"
+    assert item["estimate_deviation"] == ""
+    assert daily_nav_call_count == 0
+
+
 def test_list_fund_estimations_omits_deviation_when_published_date_differs(monkeypatch):
     class FundEstimationData:
         def fillna(self, value):
@@ -282,43 +341,24 @@ def test_list_fund_estimations_omits_deviation_when_published_date_differs(monke
 
 
 def test_get_fund_estimation_by_symbol(monkeypatch):
-    class FundEstimationData:
-        def fillna(self, value):
-            return self
-
-        @property
-        def columns(self):
-            return [
-                "基金代码",
-                "基金名称",
-                "2026-06-29-估算数据-估算值",
-                "2026-06-29-估算数据-估算增长率",
-                "2026-06-29-公布数据-单位净值",
-                "2026-06-29-公布数据-日增长率",
-                "估算偏差",
-                "2026-06-26-单位净值",
-            ]
-
-        def iterrows(self):
-            rows = [
-                {
-                    "基金代码": "000001",
-                    "基金名称": "华夏成长混合",
-                    "2026-06-29-估算数据-估算值": "1.2345",
-                    "2026-06-29-估算数据-估算增长率": "1.23%",
-                    "2026-06-29-公布数据-单位净值": "---",
-                    "2026-06-29-公布数据-日增长率": "---",
-                    "估算偏差": "---",
-                    "2026-06-26-单位净值": "1.2200",
-                }
-            ]
-            yield from enumerate(rows)
+    def fail_full_estimation_query(category="全部"):
+        raise AssertionError("full estimation list should not be loaded for single fund estimation")
 
     monkeypatch.setattr(
         akshare_client,
-        "get_fund_estimations",
-        lambda category="全部": FundEstimationData(),
+        "get_fund_realtime_estimation",
+        lambda symbol: {
+            "fundcode": "000001",
+            "name": "华夏成长混合",
+            "jzrq": "2026-06-28",
+            "dwjz": "1.2200",
+            "gsz": "1.2345",
+            "gszzl": "1.23",
+            "gztime": "2026-06-29 14:30",
+        },
+        raising=False,
     )
+    monkeypatch.setattr(akshare_client, "get_fund_estimations", fail_full_estimation_query)
 
     response = TestClient(app).post("/api/v1/funds/estimation", json={"symbol": "000001"})
 
@@ -328,45 +368,33 @@ def test_get_fund_estimation_by_symbol(monkeypatch):
     assert response.json()["request_id"] == response.headers["X-Request-ID"]
     assert response.json()["data"]["code"] == "000001"
     assert response.json()["data"]["estimate_date"] == "2026-06-29"
+    assert response.json()["data"]["estimated_nav"] == "1.2345"
+    assert response.json()["data"]["estimated_growth_rate"] == "1.23%"
+    assert response.json()["data"]["published_date"] == "2026-06-28"
+    assert response.json()["data"]["published_nav"] == "1.2200"
 
 
 def test_post_fund_value_returns_estimation_source(monkeypatch):
-    class FundEstimationData:
-        def fillna(self, value):
-            return self
-
-        @property
-        def columns(self):
-            return [
-                "基金代码",
-                "基金名称",
-                "2026-06-29-估算数据-估算值",
-                "2026-06-29-估算数据-估算增长率",
-                "2026-06-29-公布数据-单位净值",
-                "2026-06-29-公布数据-日增长率",
-                "估算偏差",
-                "2026-06-26-单位净值",
-            ]
-
-        def iterrows(self):
-            rows = [
-                {
-                    "基金代码": "000001",
-                    "基金名称": "华夏成长混合",
-                    "2026-06-29-估算数据-估算值": "1.2345",
-                    "2026-06-29-估算数据-估算增长率": "1.23%",
-                    "2026-06-29-公布数据-单位净值": "---",
-                    "2026-06-29-公布数据-日增长率": "---",
-                    "估算偏差": "---",
-                    "2026-06-26-单位净值": "1.2200",
-                }
-            ]
-            yield from enumerate(rows)
-
+    monkeypatch.setattr(
+        akshare_client,
+        "get_fund_realtime_estimation",
+        lambda symbol: {
+            "fundcode": "000001",
+            "name": "华夏成长混合",
+            "jzrq": "2026-06-28",
+            "dwjz": "1.2200",
+            "gsz": "1.2345",
+            "gszzl": "1.23",
+            "gztime": "2026-06-29 14:30",
+        },
+        raising=False,
+    )
     monkeypatch.setattr(
         akshare_client,
         "get_fund_estimations",
-        lambda category="全部": FundEstimationData(),
+        lambda category="全部": (_ for _ in ()).throw(
+            AssertionError("full estimation list should not be loaded for single fund value")
+        ),
     )
 
     response = TestClient(app).post(
@@ -438,6 +466,12 @@ def test_post_fund_value_auto_falls_back_to_daily_nav(monkeypatch):
         akshare_client,
         "get_fund_estimations",
         lambda category="全部": EmptyEstimationData(),
+    )
+    monkeypatch.setattr(
+        akshare_client,
+        "get_fund_realtime_estimation",
+        lambda symbol: {},
+        raising=False,
     )
     monkeypatch.setattr(akshare_client, "get_open_fund_daily", lambda: DailyNavData())
 
