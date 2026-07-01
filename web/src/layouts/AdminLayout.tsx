@@ -7,7 +7,9 @@ import { appRoutes, defaultRoutePath } from '../utils/route'
 
 const { Header, Sider, Content } = Layout
 
-const menuItems: MenuProps['items'] = appRoutes.map((route) => ({
+const visibleRoutes = appRoutes.filter((route) => !route.hidden)
+
+const menuItems: MenuProps['items'] = visibleRoutes.map((route) => ({
   key: route.path,
   label: route.label,
   icon: route.icon,
@@ -19,7 +21,8 @@ function AdminLayout() {
   const user = getStoredUser()
 
   const selectedKey =
-    appRoutes.find((item) => item.path === location.pathname)?.path ?? defaultRoutePath
+    visibleRoutes.find((item) => location.pathname === item.path || location.pathname.startsWith(`${item.path}/`))?.path ??
+    defaultRoutePath
 
   const logout = () => {
     clearToken()

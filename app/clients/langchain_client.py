@@ -27,6 +27,10 @@ def stream_chat(prompt: str):
                         yield str(text)
 
 
+def build_chat_model() -> ChatOpenAI:
+    return _build_model()
+
+
 def _build_model() -> ChatOpenAI:
     settings = get_settings()
     if not settings.llm_api_key:

@@ -26,7 +26,7 @@ import {
   listFavoriteFundOptions,
   type FavoriteFundOptionItem,
 } from "../../api/fund";
-import CherryMarkdownViewer from "../../components/CherryMarkdownViewer";
+import MarkdownViewer from "../../components/MarkdownViewer";
 
 type AiFundAnalysisForm = {
   favorite_fund_code?: string;
@@ -220,7 +220,7 @@ function AiFundAnalysisPage() {
       <div className="ai-workspace">
         <div className="ai-result-panel">
           {content ? (
-            <CherryMarkdownViewer value={content} />
+            <MarkdownViewer value={content} />
           ) : (
             <div className="ai-empty-state">
               <RobotOutlined />

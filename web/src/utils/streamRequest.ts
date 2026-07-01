@@ -5,6 +5,7 @@ type StreamRequestOptions<T> = {
   data?: T
   signal?: AbortSignal
   onMessage: (message: string) => void
+  onEvent?: (event: { event: string; data: string }) => void
   onDone?: () => void
   onError?: (error: Error) => void
 }
@@ -39,6 +40,7 @@ export async function streamPost<T>(url: string, options: StreamRequestOptions<T
         options.onDone?.()
         return
       }
+      options.onEvent?.({ event: event.event || 'message', data: event.data })
       if (event.data) {
         options.onMessage(event.data)
       }

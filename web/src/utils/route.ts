@@ -1,10 +1,15 @@
 import {
+  AppstoreOutlined,
   ApiOutlined,
+  FileTextOutlined,
   SettingOutlined,
   StarOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons'
 import { createElement, type ComponentType, type ReactNode } from 'react'
+import AgentListPage from '../pages/agents/AgentListPage'
+import AgentReportPage from '../pages/agents/AgentReportPage'
+import AgentRunPage from '../pages/agents/AgentRunPage'
 import AiFundAnalysisPage from '../pages/ai/AiFundAnalysisPage'
 import FundFavoritesPage from '../pages/funds/FundFavoritesPage'
 import FundListPage from '../pages/funds/FundListPage'
@@ -15,6 +20,7 @@ export type AppRoute = {
   label: string
   icon: ReactNode
   component: ComponentType
+  hidden?: boolean
 }
 
 export const defaultRoutePath = '/funds'
@@ -37,6 +43,25 @@ export const appRoutes: AppRoute[] = [
     label: '自选分析',
     icon: createElement(ApiOutlined),
     component: AiFundAnalysisPage,
+  },
+  {
+    path: '/agents',
+    label: '智能体',
+    icon: createElement(AppstoreOutlined),
+    component: AgentListPage,
+  },
+  {
+    path: '/agents/chat/:agentId',
+    label: '智能体对话',
+    icon: createElement(AppstoreOutlined),
+    component: AgentRunPage,
+    hidden: true,
+  },
+  {
+    path: '/agent-reports',
+    label: '报告中心',
+    icon: createElement(FileTextOutlined),
+    component: AgentReportPage,
   },
   {
     path: '/settings',

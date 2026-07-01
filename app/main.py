@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.routes.agent.agent_view import router as agent_router
 from app.api.routes.fund.fund_view import router as fund_router
 from app.api.routes.health.health_view import router as health_router
 from app.api.routes.ai.ai_view import router as ai_router
@@ -25,4 +26,5 @@ app.include_router(health_router, prefix="/api/v1")
 app.include_router(user_router, prefix="/api/v1")
 app.include_router(fund_router, prefix="/api/v1")
 app.include_router(ai_router, prefix="/api/v1")
+app.include_router(agent_router, prefix="/api/v1")
 app.include_router(settings_router, prefix="/api/v1")
