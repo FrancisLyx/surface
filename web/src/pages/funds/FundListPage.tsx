@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Button, Card, Form, Input, Space, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined, SearchOutlined, StarFilled } from '@ant-design/icons'
@@ -19,6 +19,23 @@ function FundListPage() {
   const [favoriteCodes, setFavoriteCodes] = useState<Set<string>>(new Set())
   const [favoriteLoadingCode, setFavoriteLoadingCode] = useState<string>()
   const [pagination, setPagination] = useState({ page: 1, page_size: 10 })
+
+  const addToFavorite = useCallback(async (fund: FundItem) => {
+    setFavoriteLoadingCode(fund.code)
+    try {
+      await addFavoriteFund({
+        fund_code: fund.code,
+        fund_name: fund.name,
+        fund_type: fund.fund_type,
+      })
+      setFavoriteCodes((previous) => new Set(previous).add(fund.code))
+      messageApi.success('已加入自选')
+    } catch (error) {
+      messageApi.error(error instanceof Error ? error.message : '加入自选失败')
+    } finally {
+      setFavoriteLoadingCode(undefined)
+    }
+  }, [messageApi])
 
   const columns: ColumnsType<FundItem> = useMemo(
     () => [
@@ -49,7 +66,7 @@ function FundListPage() {
         },
       },
     ],
-    [favoriteCodes, favoriteLoadingCode],
+    [addToFavorite, favoriteCodes, favoriteLoadingCode],
   )
 
   const loadFunds = async (values: FundSearchRequest, page = pagination.page, pageSize = pagination.page_size) => {
@@ -71,23 +88,6 @@ function FundListPage() {
 
   const submit = async (values: FundSearchRequest) => {
     await loadFunds(values, 1, pagination.page_size)
-  }
-
-  const addToFavorite = async (fund: FundItem) => {
-    setFavoriteLoadingCode(fund.code)
-    try {
-      await addFavoriteFund({
-        fund_code: fund.code,
-        fund_name: fund.name,
-        fund_type: fund.fund_type,
-      })
-      setFavoriteCodes((previous) => new Set(previous).add(fund.code))
-      messageApi.success('已加入自选')
-    } catch (error) {
-      messageApi.error(error instanceof Error ? error.message : '加入自选失败')
-    } finally {
-      setFavoriteLoadingCode(undefined)
-    }
   }
 
   return (

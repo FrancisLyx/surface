@@ -21,7 +21,7 @@ function CherryMarkdownViewer(props: { value: string }) {
       cherryRef.current?.destroy()
       cherryRef.current = null
     }
-  }, [containerId])
+  }, [containerId, props.value])
 
   useEffect(() => {
     cherryRef.current?.setValue(props.value)

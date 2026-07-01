@@ -5,10 +5,9 @@ import { getRegistrationSetting, updateRegistrationSetting } from '../../api/set
 function SystemSettingsPage() {
   const [messageApi, contextHolder] = message.useMessage()
   const [enabled, setEnabled] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    setLoading(true)
     getRegistrationSetting()
       .then((data) => setEnabled(data.enabled))
       .catch((error) => messageApi.error(error instanceof Error ? error.message : '读取设置失败'))

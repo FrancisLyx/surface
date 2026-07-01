@@ -163,21 +163,23 @@
   background: #ffffff;
   border: 1px solid #edf0f5;
   border-radius: 6px;
+  flex: 1;
+  margin-right: 12px;
 }
 
 .ai-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 16px;
+  display: flex;
 }
 
 .ai-history-panel {
-  align-self: start;
+  width: 300px;
 }
 
 .ai-history-item {
   cursor: pointer;
   border-radius: 6px;
+  padding: 12px!important;
+  box-sizing: border-box;
 }
 
 .ai-history-item.active {

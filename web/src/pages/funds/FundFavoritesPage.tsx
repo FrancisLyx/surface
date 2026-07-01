@@ -17,7 +17,7 @@ function FundFavoritesPage() {
   const [form] = Form.useForm<FavoriteFundSearchRequest>()
   const [favoriteList, setFavoriteList] = useState<PageResponse<FavoriteFundEstimationItem>>()
   const [report, setReport] = useState<FavoriteFundReportResponse>()
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [removingCode, setRemovingCode] = useState<string>()
   const [pagination, setPagination] = useState({ page: 1, page_size: 10 })
 
@@ -44,14 +44,24 @@ function FundFavoritesPage() {
   }, [messageApi, pagination.page, pagination.page_size])
 
   useEffect(() => {
-    void loadFavorites(form.getFieldsValue(), 1, 10)
-  }, [])
+    getFavoriteFundReport({
+      page: 1,
+      page_size: 10,
+    })
+      .then((data) => {
+        setReport(data)
+        setFavoriteList(data.page ?? undefined)
+        setPagination({ page: 1, page_size: 10 })
+      })
+      .catch((error) => messageApi.error(error instanceof Error ? error.message : '请求失败'))
+      .finally(() => setLoading(false))
+  }, [messageApi])
 
   const submit = async (values: FavoriteFundSearchRequest) => {
     await loadFavorites(values, 1, pagination.page_size)
   }
 
-  const removeFavorite = async (fundCode: string) => {
+  const removeFavorite = useCallback(async (fundCode: string) => {
     setRemovingCode(fundCode)
     try {
       await removeFavoriteFund({ fund_code: fundCode })
@@ -62,7 +72,7 @@ function FundFavoritesPage() {
     } finally {
       setRemovingCode(undefined)
     }
-  }
+  }, [form, loadFavorites, messageApi, pagination.page, pagination.page_size])
 
   const columns: ColumnsType<FavoriteFundEstimationItem> = useMemo(
     () => [
@@ -130,7 +140,7 @@ function FundFavoritesPage() {
         ),
       },
     ],
-    [loadFavorites, removingCode],
+    [removeFavorite, removingCode],
   )
 
   return (
