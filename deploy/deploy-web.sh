@@ -2,12 +2,38 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PRODUCTION_ENV_FILE="${ROOT_DIR}/.env.production"
 WEB_DIR="${ROOT_DIR}/web"
 DIST_DIR="${WEB_DIR}/dist"
-TARGET_DIR="${SURFACE_WEB_TARGET:-/var/www/finance.liuyixuan.site/current}"
+DEFAULT_TARGET_DIR="/var/www/surface/current"
 GIT_BRANCH="${1:-${SURFACE_GIT_BRANCH:-master}}"
 
 cd "${ROOT_DIR}"
+
+read_env_value() {
+  local file="$1"
+  local key="$2"
+  local line
+
+  if [ ! -f "${file}" ]; then
+    return 1
+  fi
+
+  line="$(grep -E "^${key}=" "${file}" | tail -n 1 || true)"
+  if [ -z "${line}" ]; then
+    return 1
+  fi
+
+  local value="${line#*=}"
+  value="${value%\"}"
+  value="${value#\"}"
+  value="${value%\'}"
+  value="${value#\'}"
+  printf '%s' "${value}"
+}
+
+CONFIG_TARGET_DIR="$(read_env_value "${PRODUCTION_ENV_FILE}" "SURFACE_WEB_TARGET" || true)"
+TARGET_DIR="${CONFIG_TARGET_DIR:-${DEFAULT_TARGET_DIR}}"
 
 if ! command -v npm >/dev/null 2>&1; then
   echo "npm is required but was not found" >&2

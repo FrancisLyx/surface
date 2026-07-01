@@ -31,12 +31,17 @@ vim .env.production
 Required values:
 
 ```bash
-DATABASE_URL=postgresql+psycopg://surface_user:your_password@111.229.41.238:5432/surface
+DATABASE_URL=postgresql+psycopg://surface_user:your_password@your-db-host:5432/surface
 JWT_SECRET_KEY=replace-with-a-long-random-secret
 JWT_ALGORITHM=HS256
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES=1440
 USER_REGISTRATION_ENABLED=true
 SURFACE_API_BIND=127.0.0.1:8000
+LLM_API_KEY=your-deepseek-api-key
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-chat
+LLM_TIMEOUT_SECONDS=60
+SURFACE_WEB_TARGET=/var/www/surface/current
 ```
 
 Start deployment:
@@ -61,13 +66,13 @@ This deploys the backend container and frontend static files together.
 The frontend build output is synced into:
 
 ```bash
-/var/www/finance.liuyixuan.site/current
+/var/www/surface/current
 ```
 
-Override target directory if needed:
+Set target directory in `.env.production`:
 
 ```bash
-SURFACE_WEB_TARGET=/var/www/another-site/current bash deploy/deploy.sh
+SURFACE_WEB_TARGET=/var/www/surface/current
 ```
 
 Deploy frontend static files:
@@ -85,13 +90,13 @@ bash deploy/deploy-web.sh dev
 The frontend-only script builds `web/dist` and syncs the contents into:
 
 ```bash
-/var/www/finance.liuyixuan.site/current
+/var/www/surface/current
 ```
 
-Override target directory if needed:
+Set target directory in `.env.production`:
 
 ```bash
-SURFACE_WEB_TARGET=/var/www/another-site/current bash deploy/deploy-web.sh
+SURFACE_WEB_TARGET=/var/www/surface/current
 ```
 
 ## Common Commands

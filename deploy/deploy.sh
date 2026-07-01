@@ -7,10 +7,32 @@ ENV_EXAMPLE="${ROOT_DIR}/.env.production.example"
 COMPOSE_FILE="${ROOT_DIR}/deploy/docker-compose.yml"
 WEB_DIR="${ROOT_DIR}/web"
 DIST_DIR="${WEB_DIR}/dist"
-WEB_TARGET_DIR="${SURFACE_WEB_TARGET:-/var/www/finance.liuyixuan.site/current}"
+DEFAULT_WEB_TARGET_DIR="/var/www/surface/current"
 GIT_BRANCH="${1:-${SURFACE_GIT_BRANCH:-master}}"
 
 cd "${ROOT_DIR}"
+
+read_env_value() {
+  local file="$1"
+  local key="$2"
+  local line
+
+  if [ ! -f "${file}" ]; then
+    return 1
+  fi
+
+  line="$(grep -E "^${key}=" "${file}" | tail -n 1 || true)"
+  if [ -z "${line}" ]; then
+    return 1
+  fi
+
+  local value="${line#*=}"
+  value="${value%\"}"
+  value="${value#\"}"
+  value="${value%\'}"
+  value="${value#\'}"
+  printf '%s' "${value}"
+}
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required but was not found" >&2
@@ -37,6 +59,9 @@ if [ ! -f "${ENV_FILE}" ]; then
   echo "Created ${ENV_FILE}. Edit it with the production database URL and JWT secret, then rerun this script." >&2
   exit 1
 fi
+
+CONFIG_WEB_TARGET="$(read_env_value "${ENV_FILE}" "SURFACE_WEB_TARGET" || true)"
+WEB_TARGET_DIR="${CONFIG_WEB_TARGET:-${DEFAULT_WEB_TARGET_DIR}}"
 
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git fetch origin "${GIT_BRANCH}"

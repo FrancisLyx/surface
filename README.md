@@ -136,11 +136,13 @@ bash deploy/deploy.sh dev
 SURFACE_GIT_BRANCH=dev bash deploy/deploy.sh
 ```
 
-如果需要修改前端发布目录：
+如果需要修改前端发布目录，在服务器的 `.env.production` 中配置：
 
 ```bash
-SURFACE_WEB_TARGET=/var/www/another-site/current bash deploy/deploy.sh
+SURFACE_WEB_TARGET=/var/www/surface/current
 ```
+
+部署脚本会从 `.env.production` 读取 `SURFACE_WEB_TARGET`。
 
 只部署前端：
 
