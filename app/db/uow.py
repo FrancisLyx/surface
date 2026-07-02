@@ -4,6 +4,9 @@ from typing import Self
 
 from sqlalchemy.orm import Session
 
+from app.repositories.system_settings import SystemSettingRepository
+from app.repositories.users import UserRepository
+
 
 SessionFactory = Callable[[], Session]
 
@@ -17,6 +20,8 @@ class SqlAlchemyUnitOfWork:
     def __enter__(self) -> Self:
         self._session = self._session_factory()
         self._committed = False
+        self.users = UserRepository(self._session)
+        self.system_settings = SystemSettingRepository(self._session)
         return self
 
     def __exit__(

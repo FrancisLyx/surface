@@ -3,8 +3,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api import dependencies
 from app.db import session as db_session
 from app.db.base import Base
+from app.db.uow import SqlAlchemyUnitOfWork
 from app.main import app
 
 
@@ -25,6 +27,7 @@ def make_client() -> TestClient:
             db.close()
 
     app.dependency_overrides[db_session.get_db] = override_db
+    app.dependency_overrides[dependencies.get_uow_factory] = lambda: lambda: SqlAlchemyUnitOfWork(TestingSessionLocal)
     return TestClient(app)
 
 

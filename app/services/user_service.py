@@ -1,65 +1,65 @@
-from fastapi import HTTPException
-from sqlalchemy import or_, select
+from collections.abc import Callable
+
 from sqlalchemy.orm import Session
 
 from app.api.routes.user.user_schema import LoginResponse, UserLoginRequest, UserRegisterRequest, UserResponse
+from app.core.current_user import CurrentUser
+from app.core.exception import ConflictError, ForbiddenError, UnauthorizedError
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.models.user import User
+from app.db.uow import SqlAlchemyUnitOfWork
 from app.services import system_setting_service
 
 
-def get_register_status(db: Session) -> dict[str, bool]:
-    return system_setting_service.get_registration_setting(db)
+class UserService:
+    def __init__(self, uow_factory: Callable[[], SqlAlchemyUnitOfWork]) -> None:
+        self._uow_factory = uow_factory
 
+    def get_register_status(self) -> dict[str, bool]:
+        with self._uow_factory() as uow:
+            return {"enabled": uow.system_settings.is_registration_enabled()}
 
-def register_user(db: Session, payload: UserRegisterRequest) -> UserResponse:
-    if not system_setting_service.is_user_registration_enabled(db):
-        raise HTTPException(status_code=403, detail="registration is disabled")
+    def register_user(self, payload: UserRegisterRequest) -> UserResponse:
+        with self._uow_factory() as uow:
+            if not uow.system_settings.is_registration_enabled():
+                raise ForbiddenError("registration is disabled")
 
-    username = payload.username.strip()
-    email = str(payload.email).strip().lower() if payload.email else None
-    phone = payload.phone.strip() if payload.phone else None
+            username = payload.username.strip()
+            email = str(payload.email).strip().lower() if payload.email else None
+            phone = payload.phone.strip() if payload.phone else None
 
-    if _get_user_by_username(db, username) is not None:
-        raise HTTPException(status_code=400, detail="username already exists")
-    if email and _get_user_by_email(db, email) is not None:
-        raise HTTPException(status_code=400, detail="email already exists")
-    if phone and _get_user_by_phone(db, phone) is not None:
-        raise HTTPException(status_code=400, detail="phone already exists")
+            if uow.users.get_by_username(username) is not None:
+                raise ConflictError("username already exists")
+            if email and uow.users.get_by_email(email) is not None:
+                raise ConflictError("email already exists")
+            if phone and uow.users.get_by_phone(phone) is not None:
+                raise ConflictError("phone already exists")
 
-    user = User(
-        username=username,
-        email=email,
-        phone=phone,
-        password_hash=hash_password(payload.password),
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return build_user_response(user)
-
-
-def login_user(db: Session, payload: UserLoginRequest) -> LoginResponse:
-    account = payload.account.strip()
-    user = db.scalar(
-        select(User).where(
-            or_(
-                User.username == account,
-                User.email == account.lower(),
-                User.phone == account,
+            user = User(
+                username=username,
+                email=email,
+                phone=phone,
+                password_hash=hash_password(payload.password),
             )
-        )
-    )
-    if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="invalid account or password")
+            uow.users.add(user)
+            uow.commit()
+            uow.users.refresh(user)
+            return build_user_response(user)
 
-    return LoginResponse(
-        access_token=create_access_token(user),
-        user=build_user_response(user),
-    )
+    def login_user(self, payload: UserLoginRequest) -> LoginResponse:
+        account = payload.account.strip()
+        with self._uow_factory() as uow:
+            user = uow.users.get_by_account(account)
+            if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
+                raise UnauthorizedError("invalid account or password")
+
+            return LoginResponse(
+                access_token=create_access_token(user),
+                user=build_user_response(user),
+            )
 
 
-def build_user_response(user: User) -> UserResponse:
+def build_user_response(user: User | CurrentUser) -> UserResponse:
     return UserResponse(
         id=user.id,
         username=user.username,
@@ -68,13 +68,17 @@ def build_user_response(user: User) -> UserResponse:
     )
 
 
-def _get_user_by_username(db: Session, username: str) -> User | None:
-    return db.scalar(select(User).where(User.username == username))
+def _service_from_session(db: Session) -> UserService:
+    return UserService(lambda: SqlAlchemyUnitOfWork(lambda: db))
 
 
-def _get_user_by_email(db: Session, email: str) -> User | None:
-    return db.scalar(select(User).where(User.email == email))
+def get_register_status(db: Session) -> dict[str, bool]:
+    return system_setting_service.get_registration_setting(db)
 
 
-def _get_user_by_phone(db: Session, phone: str) -> User | None:
-    return db.scalar(select(User).where(User.phone == phone))
+def register_user(db: Session, payload: UserRegisterRequest) -> UserResponse:
+    return _service_from_session(db).register_user(payload)
+
+
+def login_user(db: Session, payload: UserLoginRequest) -> LoginResponse:
+    return _service_from_session(db).login_user(payload)

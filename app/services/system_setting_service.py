@@ -1,38 +1,37 @@
-from sqlalchemy import select
+from collections.abc import Callable
+
 from sqlalchemy.orm import Session
 
-from app.core.config import is_user_registration_enabled as get_env_registration_enabled
-from app.db.models.system_setting import SystemSetting
+from app.db.uow import SqlAlchemyUnitOfWork
 
-USER_REGISTRATION_ENABLED_KEY = "user_registration_enabled"
+
+class SystemSettingService:
+    def __init__(self, uow_factory: Callable[[], SqlAlchemyUnitOfWork]) -> None:
+        self._uow_factory = uow_factory
+
+    def get_registration_setting(self) -> dict[str, bool]:
+        with self._uow_factory() as uow:
+            return {"enabled": uow.system_settings.is_registration_enabled()}
+
+    def update_registration_setting(self, enabled: bool) -> dict[str, bool]:
+        with self._uow_factory() as uow:
+            uow.system_settings.set_registration_enabled(enabled)
+            uow.commit()
+            return {"enabled": enabled}
+
+
+def _service_from_session(db: Session) -> SystemSettingService:
+    return SystemSettingService(lambda: SqlAlchemyUnitOfWork(lambda: db))
 
 
 def get_registration_setting(db: Session) -> dict[str, bool]:
-    return {"enabled": is_user_registration_enabled(db)}
+    return _service_from_session(db).get_registration_setting()
 
 
 def update_registration_setting(db: Session, enabled: bool) -> dict[str, bool]:
-    setting = db.get(SystemSetting, USER_REGISTRATION_ENABLED_KEY)
-    if setting is None:
-        setting = SystemSetting(key=USER_REGISTRATION_ENABLED_KEY, value=_bool_to_setting_value(enabled))
-        db.add(setting)
-    else:
-        setting.value = _bool_to_setting_value(enabled)
-
-    db.commit()
-    return {"enabled": enabled}
+    return _service_from_session(db).update_registration_setting(enabled)
 
 
 def is_user_registration_enabled(db: Session) -> bool:
-    setting = db.scalar(select(SystemSetting).where(SystemSetting.key == USER_REGISTRATION_ENABLED_KEY))
-    if setting is None:
-        return get_env_registration_enabled()
-    return _setting_value_to_bool(setting.value)
-
-
-def _bool_to_setting_value(value: bool) -> str:
-    return "true" if value else "false"
-
-
-def _setting_value_to_bool(value: str) -> bool:
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    with SqlAlchemyUnitOfWork(lambda: db) as uow:
+        return uow.system_settings.is_registration_enabled()

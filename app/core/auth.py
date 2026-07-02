@@ -1,7 +1,7 @@
 from fastapi import Depends
 
-from app.core.security import get_current_user
+from app.api.dependencies import get_current_user_context
 
 
 def require_auth():
-    return Depends(get_current_user)
+    return Depends(get_current_user_context)

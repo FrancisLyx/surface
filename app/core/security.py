@@ -1,15 +1,11 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+from fastapi.security import HTTPBearer
+from jose import jwt
 from passlib.context import CryptContext
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.models.user import User
-from app.db.session import get_db
 
 password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -34,33 +30,7 @@ def create_access_token(user: User) -> str:
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-    db: Session = Depends(get_db),
-) -> User:
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise _unauthorized()
+def get_current_user(*args, **kwargs):
+    from app.api.dependencies import get_current_user_context
 
-    settings = get_settings()
-    try:
-        payload = jwt.decode(
-            credentials.credentials,
-            settings.jwt_secret_key,
-            algorithms=[settings.jwt_algorithm],
-        )
-        user_id = int(payload.get("sub", ""))
-    except (JWTError, ValueError):
-        raise _unauthorized() from None
-
-    user = db.scalar(select(User).where(User.id == user_id, User.is_active.is_(True)))
-    if user is None:
-        raise _unauthorized()
-    return user
-
-
-def _unauthorized() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Not authenticated",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    return get_current_user_context(*args, **kwargs)

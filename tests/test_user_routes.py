@@ -1,10 +1,14 @@
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api import dependencies
+from app.api.routes.user.user_schema import UserRegisterRequest
 from app.db import session as db_session
 from app.db.base import Base
+from app.db.uow import SqlAlchemyUnitOfWork
 from app.main import app
 
 
@@ -25,6 +29,7 @@ def with_test_db():
             db.close()
 
     app.dependency_overrides[db_session.get_db] = override_db
+    app.dependency_overrides[dependencies.get_uow_factory] = lambda: lambda: SqlAlchemyUnitOfWork(TestingSessionLocal)
     return TestClient(app)
 
 
@@ -149,3 +154,38 @@ def test_me_requires_token():
     response = TestClient(app).get("/api/v1/user/me")
 
     assert response.status_code == 401
+
+
+def test_user_service_uses_domain_exception_for_duplicate_username(monkeypatch):
+    from app.core.exception import ConflictError
+    from app.services.user_service import UserService
+
+    class FakeUsers:
+        def get_by_username(self, username):
+            return object()
+
+    class FakeSettings:
+        def is_registration_enabled(self):
+            return True
+
+    class FakeUow:
+        users = FakeUsers()
+        system_settings = FakeSettings()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            pass
+
+    service = UserService(lambda: FakeUow())
+
+    with pytest.raises(ConflictError, match="username already exists"):
+        service.register_user(
+            UserRegisterRequest(
+                username="admin",
+                email="admin@example.com",
+                phone="13800138000",
+                password="123456",
+            )
+        )
