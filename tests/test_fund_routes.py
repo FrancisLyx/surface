@@ -2,8 +2,11 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.main import app
+from app.api.dependencies import get_current_user_context
 from app.clients import akshare_client
-from app.core.security import get_current_user
+from app.core.current_user import CurrentUser
+from app.core.exception import NotFoundError, ValidationError
+from app.services import fund_service
 
 
 class EmptyDailyNavData:
@@ -20,9 +23,9 @@ class EmptyDailyNavData:
 
 @pytest.fixture(autouse=True)
 def override_current_user():
-    app.dependency_overrides[get_current_user] = lambda: object()
+    app.dependency_overrides[get_current_user_context] = lambda: CurrentUser(id=1, username="admin")
     yield
-    app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(get_current_user_context, None)
 
 
 def test_list_funds_filters_by_keyword(monkeypatch):
@@ -75,6 +78,33 @@ def test_list_funds_filters_by_keyword(monkeypatch):
             }
         ],
     }
+
+
+def test_fund_service_raises_application_exception_for_missing_fund_code():
+    from app.api.routes.fund.fund_schema import FundValueRequest
+
+    with pytest.raises(ValidationError, match="fund_code is required"):
+        fund_service.get_fund_value(FundValueRequest(fund_code=" ", source="auto"))
+
+
+def test_fund_service_raises_application_exception_for_missing_estimation(monkeypatch):
+    monkeypatch.setattr(akshare_client, "get_fund_realtime_estimation", lambda symbol: {}, raising=False)
+
+    class EmptyEstimationData:
+        def fillna(self, value):
+            return self
+
+        @property
+        def columns(self):
+            return ["基金代码", "基金名称"]
+
+        def iterrows(self):
+            yield from enumerate([])
+
+    monkeypatch.setattr(akshare_client, "get_fund_estimations", lambda category="全部": EmptyEstimationData())
+
+    with pytest.raises(NotFoundError, match="Fund estimation not found: 000001"):
+        fund_service.get_fund_estimation("000001")
 
 
 def test_get_fund_detail(monkeypatch):

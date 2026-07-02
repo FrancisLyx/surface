@@ -1,4 +1,3 @@
-from fastapi import HTTPException
 from datetime import date, datetime, timedelta
 
 from app.api.routes.fund.fund_schema import (
@@ -15,6 +14,7 @@ from app.api.routes.fund.fund_schema import (
     FundValueResponse,
 )
 from app.clients import akshare_client
+from app.core.exception import BadGatewayError, NotFoundError, ValidationError
 from app.core.pagination import PageResponse, paginate
 
 
@@ -22,7 +22,7 @@ def list_funds(keyword: str | None = None, page: int = 1, page_size: int = 20) -
     try:
         fund_df = akshare_client.get_fund_names()
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"AkShare fund query failed: {exc}") from exc
+        raise BadGatewayError(f"AkShare fund query failed: {exc}") from exc
 
     normalized_keyword = keyword.strip().lower() if keyword else None
     items: list[FundItem] = []
@@ -88,7 +88,7 @@ def list_fund_rank(
     try:
         rank_df = akshare_client.get_open_fund_rank(category)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"AkShare fund rank query failed: {exc}") from exc
+        raise BadGatewayError(f"AkShare fund rank query failed: {exc}") from exc
 
     normalized_keyword = keyword.strip().lower() if keyword else None
     items: list[FundRankItem] = []
@@ -107,7 +107,7 @@ def list_fund_rank(
 def get_fund_value(request: FundValueRequest) -> FundValueResponse:
     fund_code = request.fund_code.strip()
     if not fund_code:
-        raise HTTPException(status_code=400, detail="fund_code is required")
+        raise ValidationError("fund_code is required")
 
     if request.source in {"auto", "estimation"}:
         estimation = find_fund_estimation(fund_code)
@@ -117,9 +117,9 @@ def get_fund_value(request: FundValueRequest) -> FundValueResponse:
                 source="estimation",
                 estimation=estimation,
                 latest_nav=None,
-            )
+        )
         if request.source == "estimation":
-            raise HTTPException(status_code=404, detail=f"Fund estimation not found: {fund_code}")
+            raise NotFoundError(f"Fund estimation not found: {fund_code}")
 
     latest_nav = find_fund_latest_nav(fund_code)
     if latest_nav is not None:
@@ -130,21 +130,21 @@ def get_fund_value(request: FundValueRequest) -> FundValueResponse:
             latest_nav=latest_nav,
         )
 
-    raise HTTPException(status_code=404, detail=f"Fund value not found: {fund_code}")
+    raise NotFoundError(f"Fund value not found: {fund_code}")
 
 
 def get_fund_estimation(symbol: str) -> FundEstimationItem:
     item = find_fund_estimation(symbol)
     if item is not None:
         return item
-    raise HTTPException(status_code=404, detail=f"Fund estimation not found: {symbol}")
+    raise NotFoundError(f"Fund estimation not found: {symbol}")
 
 
 def get_fund_detail(symbol: str) -> FundDetailResponse:
     try:
         detail_df = akshare_client.get_fund_detail(symbol)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"AkShare fund detail query failed: {exc}") from exc
+        raise BadGatewayError(f"AkShare fund detail query failed: {exc}") from exc
 
     items = [
         FundDetailItem(item=str(row.get("item", "")), value=str(row.get("value", "")))
@@ -157,9 +157,9 @@ def get_fund_profile(request: FundProfileRequest) -> FundProfileResponse:
     symbol = request.symbol.strip()
     year = request.year.strip()
     if not symbol:
-        raise HTTPException(status_code=400, detail="symbol is required")
+        raise ValidationError("symbol is required")
     if not year:
-        raise HTTPException(status_code=400, detail="year is required")
+        raise ValidationError("year is required")
 
     basic_info = get_fund_detail(symbol).items
 
@@ -304,14 +304,14 @@ def _load_fund_estimations(category: str):
     try:
         return akshare_client.get_fund_estimations(category)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"AkShare fund estimation query failed: {exc}") from exc
+        raise BadGatewayError(f"AkShare fund estimation query failed: {exc}") from exc
 
 
 def _load_open_fund_daily():
     try:
         return akshare_client.get_open_fund_daily()
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"AkShare fund daily nav query failed: {exc}") from exc
+        raise BadGatewayError(f"AkShare fund daily nav query failed: {exc}") from exc
 
 
 def _build_fund_estimation_item(

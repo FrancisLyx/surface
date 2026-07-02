@@ -37,6 +37,10 @@ class ConflictError(ApplicationError):
     status_code = 400
 
 
+class BadGatewayError(ApplicationError):
+    status_code = 502
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApplicationError)
     async def application_exception_handler(request: Request, exc: ApplicationError) -> JSONResponse:

@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
-from app.core.security import get_current_user
+from app.api.dependencies import get_current_user_context
+from app.core.current_user import CurrentUser
 from app.main import app
 
 
@@ -14,11 +15,11 @@ def test_request_middleware_adds_request_id_and_process_time_headers():
 
 
 def test_http_exception_response_uses_standard_error_shape():
-    app.dependency_overrides[get_current_user] = lambda: object()
+    app.dependency_overrides[get_current_user_context] = lambda: CurrentUser(id=1, username="admin")
     try:
         response = TestClient(app).post("/api/v1/funds/value", json={"fund_code": "", "source": "daily"})
     finally:
-        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_current_user_context, None)
 
     assert response.status_code == 400
     assert response.json() == {
