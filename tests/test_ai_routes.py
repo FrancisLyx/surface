@@ -9,10 +9,10 @@ from app.core.current_user import CurrentUser
 from app.core.exception import NotFoundError
 from app.db import session as db_session
 from app.db.base import Base
-from app.db.models.ai_fund_report import AiFundReport
+from app.modules.ai.report_model import AiFundReport
 from app.db.uow import SqlAlchemyUnitOfWork
 from app.main import app
-from app.services import ai_fund_service
+from app.modules.ai import service as ai_fund_service
 
 
 def make_client() -> TestClient:
@@ -82,7 +82,7 @@ def register_and_login(client: TestClient) -> str:
 
 
 def test_ai_report_service_returns_not_found_for_other_user():
-    from app.services.ai_fund_report_service import AiFundReportService
+    from app.modules.ai.report_service import AiFundReportService
 
     class FakeReports:
         def get_by_id_for_user(self, report_id, user_id):
@@ -201,7 +201,7 @@ def test_list_and_get_fund_reports_are_scoped_to_current_user(monkeypatch):
 
         db = TestingSessionLocal()
         try:
-            from app.db.models.ai_fund_report import AiFundReport
+            from app.modules.ai.report_model import AiFundReport
 
             db.add_all(
                 [

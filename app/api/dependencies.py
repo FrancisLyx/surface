@@ -18,11 +18,11 @@ from app.core.current_user import CurrentUser
 from app.core.security import bearer_scheme
 from app.db.session import SessionLocal
 from app.db.uow import SqlAlchemyUnitOfWork
-from app.services.agent_service import AgentService
-from app.services.ai_fund_report_service import AiFundReportService
-from app.services.fund_favorite_service import FundFavoriteService
-from app.services.system_setting_service import SystemSettingService
-from app.services.user_service import UserService
+from app.modules.agent.service import AgentService
+from app.modules.ai.report_service import AiFundReportService
+from app.modules.fund.favorite_service import FundFavoriteService
+from app.modules.settings.service import SystemSettingService
+from app.modules.user.service import UserService
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 UowFactory = Callable[[], SqlAlchemyUnitOfWork]

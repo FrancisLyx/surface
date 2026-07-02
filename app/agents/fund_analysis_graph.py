@@ -6,11 +6,11 @@ from langchain_core.tools import tool
 from langgraph.graph import END, StateGraph
 from sqlalchemy.orm import Session
 
-from app.api.routes.fund.fund_schema import FundProfileRequest, FundValueRequest
+from app.modules.fund.schema import FundProfileRequest, FundValueRequest
 from app.clients.langchain_client import build_chat_model, stream_chat
-from app.db.models.user import User
-from app.services import fund_service
-from app.services.agent_event import message_event, tool_call_event, tool_result_event
+from app.modules.user.model import User
+from app.modules.fund import service as fund_service
+from app.modules.agent.event import message_event, tool_call_event, tool_result_event
 from app.tools import fund_tools
 
 

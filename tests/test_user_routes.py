@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api import dependencies
-from app.api.routes.user.user_schema import UserRegisterRequest
+from app.modules.user.schema import UserRegisterRequest
 from app.db import session as db_session
 from app.db.base import Base
 from app.db.uow import SqlAlchemyUnitOfWork
@@ -158,7 +158,7 @@ def test_me_requires_token():
 
 def test_user_service_uses_domain_exception_for_duplicate_username(monkeypatch):
     from app.core.exception import ConflictError
-    from app.services.user_service import UserService
+    from app.modules.user.service import UserService
 
     class FakeUsers:
         def get_by_username(self, username):

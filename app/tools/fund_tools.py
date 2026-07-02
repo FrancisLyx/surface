@@ -2,9 +2,10 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.api.routes.fund.fund_schema import FundProfileRequest, FundValueRequest
-from app.db.models.user import User
-from app.services import fund_favorite_service, fund_service
+from app.modules.fund.schema import FundProfileRequest, FundValueRequest
+from app.modules.user.model import User
+from app.modules.fund import favorite_service as fund_favorite_service
+from app.modules.fund import service as fund_service
 
 
 def load_fund_analysis_data(fund_code: str) -> dict[str, object]:

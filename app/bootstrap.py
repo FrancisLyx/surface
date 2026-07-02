@@ -2,12 +2,12 @@ from collections.abc import Callable
 
 from sqlalchemy.orm import Session
 
-from app.services.agent_service import AgentService
+from app.modules.agent.service import AgentService
 from app.db.uow import SqlAlchemyUnitOfWork
-from app.services.ai_fund_report_service import AiFundReportService
-from app.services.fund_favorite_service import FundFavoriteService
-from app.services.system_setting_service import SystemSettingService
-from app.services.user_service import UserService
+from app.modules.ai.report_service import AiFundReportService
+from app.modules.fund.favorite_service import FundFavoriteService
+from app.modules.settings.service import SystemSettingService
+from app.modules.user.service import UserService
 
 
 def create_uow_factory(session_factory: Callable[[], Session]) -> Callable[[], SqlAlchemyUnitOfWork]:

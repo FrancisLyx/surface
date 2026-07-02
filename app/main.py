@@ -1,11 +1,11 @@
 from fastapi import FastAPI
 
-from app.api.routes.agent.agent_view import router as agent_router
-from app.api.routes.fund.fund_view import router as fund_router
-from app.api.routes.health.health_view import router as health_router
-from app.api.routes.ai.ai_view import router as ai_router
-from app.api.routes.settings.settings_view import router as settings_router
-from app.api.routes.user.user_view import router as user_router
+from app.modules.agent.api import router as agent_router
+from app.modules.fund.api import router as fund_router
+from app.modules.health.api import router as health_router
+from app.modules.ai.api import router as ai_router
+from app.modules.settings.api import router as settings_router
+from app.modules.user.api import router as user_router
 from app.core.exception import register_exception_handlers
 from app.core.lifespan import app_lifespan
 from app.core.middleware import register_request_middleware

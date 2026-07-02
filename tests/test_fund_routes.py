@@ -6,7 +6,7 @@ from app.api.dependencies import get_current_user_context
 from app.clients import akshare_client
 from app.core.current_user import CurrentUser
 from app.core.exception import NotFoundError, ValidationError
-from app.services import fund_service
+from app.modules.fund import service as fund_service
 
 
 class EmptyDailyNavData:
@@ -81,7 +81,7 @@ def test_list_funds_filters_by_keyword(monkeypatch):
 
 
 def test_fund_service_raises_application_exception_for_missing_fund_code():
-    from app.api.routes.fund.fund_schema import FundValueRequest
+    from app.modules.fund.schema import FundValueRequest
 
     with pytest.raises(ValidationError, match="fund_code is required"):
         fund_service.get_fund_value(FundValueRequest(fund_code=" ", source="auto"))

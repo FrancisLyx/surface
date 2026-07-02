@@ -1,7 +1,7 @@
 from langchain_core.messages import AIMessage
 
 from app.agents import fund_analysis_graph
-from app.api.routes.fund.fund_schema import (
+from app.modules.fund.schema import (
     FundDetailItem,
     FundEstimationItem,
     FundProfileResponse,
@@ -118,4 +118,4 @@ def test_tool_calling_fund_agent_lets_model_choose_tools(monkeypatch):
     assert tool_result_events[0].data["data"]["fund_code"] == "110010"
     assert tool_result_events[1].data["data"]["basic_info"][0]["value"] == "易方达价值成长混合"
     assert tool_result_events[2].data["data"]["period_return"] == "8.00%"
-from app.services.agent_event import AgentStreamEvent
+from app.modules.agent.event import AgentStreamEvent

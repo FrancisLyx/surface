@@ -4,11 +4,11 @@ from typing import Self
 
 from sqlalchemy.orm import Session
 
-from app.repositories.agents import AgentRepository
-from app.repositories.ai_fund_reports import AiFundReportRepository
-from app.repositories.fund_favorites import FundFavoriteRepository
-from app.repositories.system_settings import SystemSettingRepository
-from app.repositories.users import UserRepository
+from app.modules.agent.repository import AgentRepository
+from app.modules.ai.report_repository import AiFundReportRepository
+from app.modules.fund.favorite_repository import FundFavoriteRepository
+from app.modules.settings.repository import SystemSettingRepository
+from app.modules.user.repository import UserRepository
 
 
 SessionFactory = Callable[[], Session]

@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api import dependencies
-from app.api.routes.fund.fund_schema import FavoriteFundAddRequest
+from app.modules.fund.schema import FavoriteFundAddRequest
 from app.core.current_user import CurrentUser
 from app.db import session as db_session
 from app.db.base import Base
@@ -52,7 +52,7 @@ def clear_overrides() -> None:
 
 
 def test_favorite_service_accepts_current_user_context():
-    from app.services.fund_favorite_service import FundFavoriteService
+    from app.modules.fund.favorite_service import FundFavoriteService
 
     class FakeFavorite:
         id = None

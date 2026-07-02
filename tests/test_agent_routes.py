@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from app.services.agent_event import message_event
+from app.modules.agent.event import message_event
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -7,10 +7,11 @@ from sqlalchemy.pool import StaticPool
 from app.api import dependencies
 from app.db import session as db_session
 from app.db.base import Base
-from app.db.models.agent import AgentConversation, AgentDefinition, AgentMessage, AgentReport, AgentRun
+from app.modules.agent.model import AgentConversation, AgentDefinition, AgentMessage, AgentReport, AgentRun
 from app.db.uow import SqlAlchemyUnitOfWork
 from app.main import app
-from app.services import agent_runtime_service, agent_service
+from app.modules.agent import runtime as agent_runtime_service
+from app.modules.agent import service as agent_service
 
 
 def make_client_with_session():

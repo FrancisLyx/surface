@@ -5,7 +5,7 @@ from jose import jwt
 from passlib.context import CryptContext
 
 from app.core.config import get_settings
-from app.db.models.user import User
+from app.modules.user.model import User
 
 password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)

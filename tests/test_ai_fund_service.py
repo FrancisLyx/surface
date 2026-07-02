@@ -1,4 +1,4 @@
-from app.api.routes.fund.fund_schema import (
+from app.modules.fund.schema import (
     FundDetailItem,
     FundEstimationItem,
     FundProfileRequest,
@@ -6,8 +6,8 @@ from app.api.routes.fund.fund_schema import (
     FundValueRequest,
     FundValueResponse,
 )
-from app.services import ai_fund_service
-from app.services import fund_service
+from app.modules.ai import service as ai_fund_service
+from app.modules.fund import service as fund_service
 
 
 def test_summarize_fund_builds_professional_analysis_prompt(monkeypatch):
