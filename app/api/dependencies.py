@@ -6,6 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 
 from app.bootstrap import (
+    create_agent_service,
     create_ai_fund_report_service,
     create_fund_favorite_service,
     create_system_setting_service,
@@ -17,6 +18,7 @@ from app.core.current_user import CurrentUser
 from app.core.security import bearer_scheme
 from app.db.session import SessionLocal
 from app.db.uow import SqlAlchemyUnitOfWork
+from app.services.agent_service import AgentService
 from app.services.ai_fund_report_service import AiFundReportService
 from app.services.fund_favorite_service import FundFavoriteService
 from app.services.system_setting_service import SystemSettingService
@@ -52,6 +54,12 @@ def get_ai_fund_report_service(
     uow_factory: Annotated[UowFactory, Depends(get_uow_factory)],
 ) -> AiFundReportService:
     return create_ai_fund_report_service(uow_factory)
+
+
+def get_agent_service(
+    uow_factory: Annotated[UowFactory, Depends(get_uow_factory)],
+) -> AgentService:
+    return create_agent_service(uow_factory)
 
 
 def get_current_user_context(

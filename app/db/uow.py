@@ -4,6 +4,7 @@ from typing import Self
 
 from sqlalchemy.orm import Session
 
+from app.repositories.agents import AgentRepository
 from app.repositories.ai_fund_reports import AiFundReportRepository
 from app.repositories.fund_favorites import FundFavoriteRepository
 from app.repositories.system_settings import SystemSettingRepository
@@ -26,6 +27,7 @@ class SqlAlchemyUnitOfWork:
         self.system_settings = SystemSettingRepository(self._session)
         self.fund_favorites = FundFavoriteRepository(self._session)
         self.ai_fund_reports = AiFundReportRepository(self._session)
+        self.agents = AgentRepository(self._session)
         return self
 
     def __exit__(

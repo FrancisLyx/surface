@@ -1,10 +1,9 @@
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any
 
-from fastapi import HTTPException
-from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.routes.agent.agent_schema import (
@@ -15,15 +14,14 @@ from app.api.routes.agent.agent_schema import (
     AgentReportDetailResponse,
     AgentReportListItem,
 )
+from app.core.current_user import CurrentUser
+from app.core.exception import NotFoundError, ValidationError
 from app.core.pagination import PageResponse
 from app.db.models.agent import AgentConversation, AgentDefinition, AgentMessage, AgentReport, AgentRun
 from app.db.models.user import User
-from app.services.agent_event import (
-    AgentStreamEvent,
-    conversation_event,
-    error_event,
-)
+from app.db.uow import SqlAlchemyUnitOfWork
 from app.services import agent_runtime_service
+from app.services.agent_event import AgentStreamEvent, conversation_event, error_event
 
 BUILTIN_AGENTS = [
     {
@@ -53,11 +51,288 @@ BUILTIN_AGENTS = [
 ]
 
 
-def ensure_builtin_agents(db: Session) -> None:
+@dataclass(frozen=True, slots=True)
+class AgentDefinitionDTO:
+    id: int
+    name: str
+    code: str
+    agent_type: str
+    description: str
+    system_prompt: str
+    graph_code: str
+    enabled: bool
+    is_builtin: bool
+
+
+@dataclass(frozen=True, slots=True)
+class StreamStart:
+    agent: AgentDefinitionDTO
+    conversation_id: int
+    run_id: int
+    history: list[dict[str, str]]
+
+
+class AgentService:
+    def __init__(self, uow_factory: Callable[[], SqlAlchemyUnitOfWork]) -> None:
+        self._uow_factory = uow_factory
+
+    def ensure_builtin_agents(self) -> None:
+        with self._uow_factory() as uow:
+            _ensure_builtin_agents(uow)
+            uow.commit()
+
+    def list_agents(self, user: CurrentUser, page: int = 1, page_size: int = 20) -> PageResponse[AgentListItem]:
+        with self._uow_factory() as uow:
+            _ensure_builtin_agents(uow)
+            total = uow.agents.count_definitions_for_user(user.id)
+            pages = (total + page_size - 1) // page_size if total else 0
+            offset = (page - 1) * page_size
+            agents = uow.agents.list_definitions_for_user(user.id, offset=offset, limit=page_size)
+            uow.commit()
+            return PageResponse(
+                page=page,
+                page_size=page_size,
+                total=total,
+                pages=pages,
+                items=[_to_agent_item(agent) for agent in agents],
+            )
+
+    def stream_chat(
+        self,
+        user: CurrentUser,
+        agent_id: int,
+        message: str,
+        conversation_id: int | None = None,
+        fund_code: str | None = None,
+    ) -> Iterator[AgentStreamEvent]:
+        normalized_message = message.strip()
+        if not normalized_message:
+            raise ValidationError("message is required")
+
+        normalized_fund_code = fund_code.strip() if fund_code else None
+        start = self._start_stream_chat(user, agent_id, normalized_message, conversation_id, normalized_fund_code)
+        yield conversation_event(start.conversation_id)
+
+        started_at = perf_counter()
+        assistant_chunks: list[str] = []
+        try:
+            for event in agent_runtime_service.stream_agent_chat(
+                start.agent,
+                {"message": normalized_message, "fund_code": normalized_fund_code},
+                start.history,
+                user,
+                None,
+            ):
+                if event.event == "message" and isinstance(event.data, dict):
+                    assistant_chunks.append(str(event.data.get("content") or ""))
+                elif event.event == "tool_call" and isinstance(event.data, dict):
+                    self._save_tool_message(start.conversation_id, start.agent.id, user.id, event.data, "tool_call")
+                elif event.event == "tool_result" and isinstance(event.data, dict):
+                    self._save_tool_message(start.conversation_id, start.agent.id, user.id, event.data, "tool_result")
+                yield event
+        except Exception as exc:
+            self._finish_run_failure(start.run_id, str(exc), _duration_ms(started_at))
+            yield error_event(str(exc))
+            return
+
+        assistant_content = "".join(assistant_chunks)
+        self._finish_run_success(
+            run_id=start.run_id,
+            conversation_id=start.conversation_id,
+            user_id=user.id,
+            agent_id=start.agent.id,
+            output_text=assistant_content,
+            duration_ms=_duration_ms(started_at),
+        )
+
+    def list_reports(
+        self,
+        user: CurrentUser,
+        agent_id: int | None = None,
+        target_code: str | None = None,
+        page: int = 1,
+        page_size: int = 10,
+    ) -> PageResponse[AgentReportListItem]:
+        with self._uow_factory() as uow:
+            _ensure_builtin_agents(uow)
+            total = uow.agents.count_reports_for_user(user.id, agent_id, target_code)
+            pages = (total + page_size - 1) // page_size if total else 0
+            offset = (page - 1) * page_size
+            rows = uow.agents.list_reports_for_user(user.id, agent_id, target_code, offset=offset, limit=page_size)
+            uow.commit()
+            return PageResponse(
+                page=page,
+                page_size=page_size,
+                total=total,
+                pages=pages,
+                items=[_to_report_item(report, agent) for report, agent in rows],
+            )
+
+    def list_conversations(
+        self,
+        user: CurrentUser,
+        agent_id: int,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> PageResponse[AgentConversationListItem]:
+        with self._uow_factory() as uow:
+            _ensure_builtin_agents(uow)
+            _get_enabled_agent_by_id(uow, user, agent_id)
+            total = uow.agents.count_conversations_for_user_agent(user.id, agent_id)
+            pages = (total + page_size - 1) // page_size if total else 0
+            offset = (page - 1) * page_size
+            conversations = uow.agents.list_conversations_for_user_agent(user.id, agent_id, offset=offset, limit=page_size)
+            uow.commit()
+            return PageResponse(
+                page=page,
+                page_size=page_size,
+                total=total,
+                pages=pages,
+                items=[_to_conversation_item(item) for item in conversations],
+            )
+
+    def get_conversation_detail(self, user: CurrentUser, conversation_id: int) -> AgentConversationDetailResponse:
+        with self._uow_factory() as uow:
+            _ensure_builtin_agents(uow)
+            conversation = uow.agents.get_conversation_for_user(conversation_id, user.id)
+            if conversation is None:
+                raise NotFoundError("conversation not found")
+            _get_enabled_agent_by_id(uow, user, conversation.agent_id)
+            messages = uow.agents.list_visible_messages(conversation.id)
+            uow.commit()
+            return AgentConversationDetailResponse(
+                id=conversation.id,
+                agent_id=conversation.agent_id,
+                title=conversation.title,
+                target_type=conversation.target_type,
+                target_code=conversation.target_code,
+                messages=[_to_conversation_message_item(item) for item in messages],
+            )
+
+    def get_report_detail(self, user: CurrentUser, report_id: int) -> AgentReportDetailResponse:
+        with self._uow_factory() as uow:
+            _ensure_builtin_agents(uow)
+            row = uow.agents.get_report_for_user(report_id, user.id)
+            if row is None:
+                raise NotFoundError("report not found")
+            report, agent = row
+            uow.commit()
+            return AgentReportDetailResponse(**_to_report_item(report, agent).model_dump(), content=report.content)
+
+    def _start_stream_chat(
+        self,
+        user: CurrentUser,
+        agent_id: int,
+        message: str,
+        conversation_id: int | None,
+        fund_code: str | None,
+    ) -> StreamStart:
+        with self._uow_factory() as uow:
+            _ensure_builtin_agents(uow)
+            agent = _get_enabled_agent_by_id(uow, user, agent_id)
+            conversation = _get_or_create_conversation(uow, user, agent, conversation_id, message, fund_code)
+            history = _conversation_history(uow, conversation.id)
+            uow.agents.add(
+                AgentMessage(
+                    conversation_id=conversation.id,
+                    user_id=user.id,
+                    agent_id=agent.id,
+                    role="user",
+                    message_type="text",
+                    content=message,
+                    payload_json={"fund_code": fund_code} if fund_code else None,
+                )
+            )
+            run = AgentRun(
+                user_id=user.id,
+                agent_id=agent.id,
+                conversation_id=conversation.id,
+                input_json={"message": message, "fund_code": fund_code},
+                status="running",
+            )
+            uow.agents.add(run)
+            uow.commit()
+            uow.agents.refresh(conversation)
+            uow.agents.refresh(run)
+            return StreamStart(
+                agent=_to_agent_dto(agent),
+                conversation_id=conversation.id,
+                run_id=run.id,
+                history=history,
+            )
+
+    def _save_tool_message(
+        self,
+        conversation_id: int,
+        agent_id: int,
+        user_id: int,
+        data: dict[str, Any],
+        message_type: str,
+    ) -> None:
+        with self._uow_factory() as uow:
+            uow.agents.add(
+                AgentMessage(
+                    conversation_id=conversation_id,
+                    user_id=user_id,
+                    agent_id=agent_id,
+                    role="tool",
+                    message_type=message_type,
+                    content=str(data.get("summary") or data.get("tool_name") or message_type),
+                    tool_call_id=data.get("tool_call_id"),
+                    tool_name=data.get("tool_name"),
+                    payload_json=data,
+                )
+            )
+            uow.commit()
+
+    def _finish_run_success(
+        self,
+        run_id: int,
+        conversation_id: int,
+        user_id: int,
+        agent_id: int,
+        output_text: str,
+        duration_ms: int,
+    ) -> None:
+        with self._uow_factory() as uow:
+            run = uow.session.get(AgentRun, run_id)
+            conversation = uow.session.get(AgentConversation, conversation_id)
+            if output_text:
+                uow.agents.add(
+                    AgentMessage(
+                        conversation_id=conversation_id,
+                        user_id=user_id,
+                        agent_id=agent_id,
+                        role="assistant",
+                        message_type="text",
+                        content=output_text,
+                    )
+                )
+            if run is not None:
+                run.output_text = output_text
+                run.status = "success"
+                run.duration_ms = duration_ms
+                run.finished_at = datetime.now(timezone.utc)
+            if conversation is not None:
+                conversation.updated_at = datetime.now(timezone.utc)
+            uow.commit()
+
+    def _finish_run_failure(self, run_id: int, error_message: str, duration_ms: int) -> None:
+        with self._uow_factory() as uow:
+            run = uow.session.get(AgentRun, run_id)
+            if run is not None:
+                run.status = "failed"
+                run.error_message = error_message
+                run.duration_ms = duration_ms
+                run.finished_at = datetime.now(timezone.utc)
+            uow.commit()
+
+
+def _ensure_builtin_agents(uow) -> None:
     for item in BUILTIN_AGENTS:
-        agent = db.scalar(select(AgentDefinition).where(AgentDefinition.code == item["code"]))
+        agent = uow.agents.get_definition_by_code(item["code"])
         if agent is None:
-            db.add(
+            uow.agents.add(
                 AgentDefinition(
                     **item,
                     enabled=True,
@@ -71,257 +346,71 @@ def ensure_builtin_agents(db: Session) -> None:
             agent.system_prompt = item["system_prompt"]
             agent.graph_code = item["graph_code"]
             agent.is_builtin = True
-    db.commit()
+    uow.agents.flush()
 
 
-def list_agents(db: Session, user: User, page: int = 1, page_size: int = 20) -> PageResponse[AgentListItem]:
-    ensure_builtin_agents(db)
-    where_clause = and_(
-        AgentDefinition.enabled.is_(True),
-        or_(AgentDefinition.is_builtin.is_(True), AgentDefinition.owner_user_id == user.id),
-    )
-    total = db.scalar(select(func.count()).select_from(AgentDefinition).where(where_clause)) or 0
-    pages = (total + page_size - 1) // page_size if total else 0
-    offset = (page - 1) * page_size
-    agents = db.scalars(
-        select(AgentDefinition)
-        .where(where_clause)
-        .order_by(AgentDefinition.id.asc())
-        .offset(offset)
-        .limit(page_size)
-    ).all()
-    return PageResponse(
-        page=page,
-        page_size=page_size,
-        total=total,
-        pages=pages,
-        items=[_to_agent_item(agent) for agent in agents],
-    )
-
-
-def stream_chat(
-    db: Session,
-    user: User,
-    agent_id: int,
-    message: str,
-    conversation_id: int | None = None,
-    fund_code: str | None = None,
-) -> Iterator[AgentStreamEvent]:
-    ensure_builtin_agents(db)
-    agent = _get_enabled_agent_by_id(db, user, agent_id)
-    normalized_message = message.strip()
-    if not normalized_message:
-        raise HTTPException(status_code=400, detail="message is required")
-
-    normalized_fund_code = fund_code.strip() if fund_code else None
-    conversation = _get_or_create_conversation(db, user, agent, conversation_id, normalized_message, normalized_fund_code)
-    yield conversation_event(conversation.id)
-
-    started_at = perf_counter()
-    run: AgentRun | None = None
-    assistant_chunks: list[str] = []
-    try:
-        history = _conversation_history(db, conversation.id)
-        db.add(
-            AgentMessage(
-                conversation_id=conversation.id,
-                user_id=user.id,
-                agent_id=agent.id,
-                role="user",
-                message_type="text",
-                content=normalized_message,
-                payload_json={"fund_code": normalized_fund_code} if normalized_fund_code else None,
-            )
-        )
-        db.commit()
-
-        run = AgentRun(
-            user_id=user.id,
-            agent_id=agent.id,
-            conversation_id=conversation.id,
-            input_json={"message": normalized_message, "fund_code": normalized_fund_code},
-            status="running",
-        )
-        db.add(run)
-        db.commit()
-        db.refresh(run)
-
-        for event in agent_runtime_service.stream_agent_chat(
-            agent,
-            {"message": normalized_message, "fund_code": normalized_fund_code},
-            history,
-            user,
-            db,
-        ):
-            if event.event == "message" and isinstance(event.data, dict):
-                content = str(event.data.get("content") or "")
-                assistant_chunks.append(content)
-            elif event.event == "tool_call" and isinstance(event.data, dict):
-                _save_tool_message(db, conversation, agent, user, event.data, role="tool", message_type="tool_call")
-            elif event.event == "tool_result" and isinstance(event.data, dict):
-                _save_tool_message(db, conversation, agent, user, event.data, role="tool", message_type="tool_result")
-            yield event
-    except Exception as exc:
-        if run is not None:
-            run.status = "failed"
-            run.error_message = str(exc)
-            run.duration_ms = _duration_ms(started_at)
-            run.finished_at = datetime.now(timezone.utc)
-        db.commit()
-        yield error_event(str(exc))
-        return
-
-    assistant_content = "".join(assistant_chunks)
-    if assistant_content:
-        db.add(
-            AgentMessage(
-                conversation_id=conversation.id,
-                user_id=user.id,
-                agent_id=agent.id,
-                role="assistant",
-                message_type="text",
-                content=assistant_content,
-            )
-        )
-    run.output_text = assistant_content
-    run.status = "success"
-    run.duration_ms = _duration_ms(started_at)
-    run.finished_at = datetime.now(timezone.utc)
-    conversation.updated_at = datetime.now(timezone.utc)
-    db.commit()
-
-
-def list_reports(
-    db: Session,
-    user: User,
-    agent_id: int | None = None,
-    target_code: str | None = None,
-    page: int = 1,
-    page_size: int = 10,
-) -> PageResponse[AgentReportListItem]:
-    ensure_builtin_agents(db)
-    filters = [AgentReport.user_id == user.id]
-    if target_code and target_code.strip():
-        filters.append(AgentReport.target_code == target_code.strip())
-    if agent_id:
-        filters.append(AgentDefinition.id == agent_id)
-
-    where_clause = and_(*filters)
-    total = (
-        db.scalar(
-            select(func.count())
-            .select_from(AgentReport)
-            .join(AgentDefinition, AgentDefinition.id == AgentReport.agent_id)
-            .where(where_clause)
-        )
-        or 0
-    )
-    pages = (total + page_size - 1) // page_size if total else 0
-    offset = (page - 1) * page_size
-    rows = db.execute(
-        select(AgentReport, AgentDefinition)
-        .join(AgentDefinition, AgentDefinition.id == AgentReport.agent_id)
-        .where(where_clause)
-        .order_by(AgentReport.created_at.desc(), AgentReport.id.desc())
-        .offset(offset)
-        .limit(page_size)
-    ).all()
-
-    return PageResponse(
-        page=page,
-        page_size=page_size,
-        total=total,
-        pages=pages,
-        items=[_to_report_item(report, agent) for report, agent in rows],
-    )
-
-
-def list_conversations(
-    db: Session,
-    user: User,
-    agent_id: int,
-    page: int = 1,
-    page_size: int = 20,
-) -> PageResponse[AgentConversationListItem]:
-    ensure_builtin_agents(db)
-    _get_enabled_agent_by_id(db, user, agent_id)
-    where_clause = and_(AgentConversation.user_id == user.id, AgentConversation.agent_id == agent_id)
-    total = db.scalar(select(func.count()).select_from(AgentConversation).where(where_clause)) or 0
-    pages = (total + page_size - 1) // page_size if total else 0
-    offset = (page - 1) * page_size
-    conversations = db.scalars(
-        select(AgentConversation)
-        .where(where_clause)
-        .order_by(AgentConversation.updated_at.desc(), AgentConversation.id.desc())
-        .offset(offset)
-        .limit(page_size)
-    ).all()
-    return PageResponse(
-        page=page,
-        page_size=page_size,
-        total=total,
-        pages=pages,
-        items=[_to_conversation_item(item) for item in conversations],
-    )
-
-
-def get_conversation_detail(db: Session, user: User, conversation_id: int) -> AgentConversationDetailResponse:
-    ensure_builtin_agents(db)
-    conversation = db.scalar(
-        select(AgentConversation).where(
-            AgentConversation.id == conversation_id,
-            AgentConversation.user_id == user.id,
-        )
-    )
-    if conversation is None:
-        raise HTTPException(status_code=404, detail="conversation not found")
-    _get_enabled_agent_by_id(db, user, conversation.agent_id)
-    messages = db.scalars(
-        select(AgentMessage)
-        .where(
-            AgentMessage.conversation_id == conversation.id,
-            AgentMessage.role.in_(["user", "assistant"]),
-        )
-        .order_by(AgentMessage.created_at.asc(), AgentMessage.id.asc())
-    ).all()
-    return AgentConversationDetailResponse(
-        id=conversation.id,
-        agent_id=conversation.agent_id,
-        title=conversation.title,
-        target_type=conversation.target_type,
-        target_code=conversation.target_code,
-        messages=[_to_conversation_message_item(item) for item in messages],
-    )
-
-
-def get_report_detail(db: Session, user: User, report_id: int) -> AgentReportDetailResponse:
-    ensure_builtin_agents(db)
-    row = db.execute(
-        select(AgentReport, AgentDefinition)
-        .join(AgentDefinition, AgentDefinition.id == AgentReport.agent_id)
-        .where(AgentReport.id == report_id, AgentReport.user_id == user.id)
-    ).first()
-    if row is None:
-        raise HTTPException(status_code=404, detail="report not found")
-
-    report, agent = row
-    return AgentReportDetailResponse(**_to_report_item(report, agent).model_dump(), content=report.content)
-
-
-def _get_enabled_agent_by_id(db: Session, user: User, agent_id: int) -> AgentDefinition:
-    agent = db.scalar(
-        select(AgentDefinition).where(
-            AgentDefinition.id == agent_id,
-            AgentDefinition.enabled.is_(True),
-            or_(AgentDefinition.is_builtin.is_(True), AgentDefinition.owner_user_id == user.id),
-        )
-    )
+def _get_enabled_agent_by_id(uow, user: CurrentUser, agent_id: int) -> AgentDefinition:
+    agent = uow.agents.get_enabled_definition_for_user(agent_id, user.id)
     if agent is None:
-        raise HTTPException(status_code=404, detail="agent not found")
+        raise NotFoundError("agent not found")
     return agent
 
 
-def _to_agent_item(agent: AgentDefinition) -> AgentListItem:
+def _get_or_create_conversation(
+    uow,
+    user: CurrentUser,
+    agent: AgentDefinition,
+    conversation_id: int | None,
+    message: str,
+    fund_code: str | None,
+) -> AgentConversation:
+    if conversation_id:
+        conversation = uow.agents.get_conversation_for_user_agent(conversation_id, user.id, agent.id)
+        if conversation is None:
+            raise NotFoundError("conversation not found")
+        if fund_code and not conversation.target_code:
+            conversation.target_code = fund_code
+            conversation.target_type = "fund"
+        return conversation
+
+    conversation = AgentConversation(
+        user_id=user.id,
+        agent_id=agent.id,
+        title=message[:30] or agent.name,
+        target_type="fund" if fund_code else None,
+        target_code=fund_code,
+    )
+    uow.agents.add(conversation)
+    uow.agents.flush()
+    return conversation
+
+
+def _conversation_history(uow, conversation_id: int) -> list[dict[str, str]]:
+    messages = uow.agents.list_history_messages(conversation_id)
+    return [{"role": item.role, "content": item.content} for item in reversed(messages)]
+
+
+def _to_current_user(user: User | CurrentUser) -> CurrentUser:
+    if isinstance(user, CurrentUser):
+        return user
+    return CurrentUser(id=user.id, username=user.username, email=user.email, phone=user.phone, role_id=user.role_id)
+
+
+def _to_agent_dto(agent: AgentDefinition) -> AgentDefinitionDTO:
+    return AgentDefinitionDTO(
+        id=agent.id,
+        name=agent.name,
+        code=agent.code,
+        agent_type=agent.agent_type,
+        description=agent.description,
+        system_prompt=agent.system_prompt,
+        graph_code=agent.graph_code,
+        enabled=agent.enabled,
+        is_builtin=agent.is_builtin,
+    )
+
+
+def _to_agent_item(agent: AgentDefinition | AgentDefinitionDTO) -> AgentListItem:
     return AgentListItem(
         id=agent.id,
         name=agent.name,
@@ -367,98 +456,69 @@ def _to_conversation_message_item(message: AgentMessage) -> AgentConversationMes
     )
 
 
-def _build_report_title(agent: AgentDefinition, payload: dict[str, Any]) -> str:
-    target = _target_code(agent, payload)
-    if target:
-        return f"{target} {agent.name}"
-    return agent.name
-
-
-def _target_type(agent: AgentDefinition) -> str:
-    return "portfolio" if agent.code == "favorite_fund_scan" else "fund"
-
-
-def _target_code(agent: AgentDefinition, payload: dict[str, Any]) -> str | None:
-    if agent.code in {"fund_deep_analysis", "aggressive_ajia"}:
-        value = payload.get("fund_code")
-        return str(value).strip() if value else None
-    return None
-
-
-def _get_or_create_conversation(
-    db: Session,
-    user: User,
-    agent: AgentDefinition,
-    conversation_id: int | None,
-    message: str,
-    fund_code: str | None,
-) -> AgentConversation:
-    if conversation_id:
-        conversation = db.scalar(
-            select(AgentConversation).where(
-                AgentConversation.id == conversation_id,
-                AgentConversation.user_id == user.id,
-                AgentConversation.agent_id == agent.id,
-            )
-        )
-        if conversation is None:
-            raise HTTPException(status_code=404, detail="conversation not found")
-        if fund_code and not conversation.target_code:
-            conversation.target_code = fund_code
-            conversation.target_type = "fund"
-        return conversation
-
-    title = message[:30] or agent.name
-    conversation = AgentConversation(
-        user_id=user.id,
-        agent_id=agent.id,
-        title=title,
-        target_type="fund" if fund_code else None,
-        target_code=fund_code,
-    )
-    db.add(conversation)
-    db.commit()
-    db.refresh(conversation)
-    return conversation
-
-
-def _conversation_history(db: Session, conversation_id: int) -> list[dict[str, str]]:
-    messages = db.scalars(
-        select(AgentMessage)
-        .where(
-            AgentMessage.conversation_id == conversation_id,
-            AgentMessage.role.in_(["user", "assistant"]),
-        )
-        .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
-        .limit(20)
-    ).all()
-    return [{"role": item.role, "content": item.content} for item in reversed(messages)]
-
-
-def _save_tool_message(
-    db: Session,
-    conversation: AgentConversation,
-    agent: AgentDefinition,
-    user: User,
-    data: dict[str, Any],
-    role: str,
-    message_type: str,
-) -> None:
-    db.add(
-        AgentMessage(
-            conversation_id=conversation.id,
-            user_id=user.id,
-            agent_id=agent.id,
-            role=role,
-            message_type=message_type,
-            content=str(data.get("summary") or data.get("tool_name") or message_type),
-            tool_call_id=data.get("tool_call_id"),
-            tool_name=data.get("tool_name"),
-            payload_json=data,
-        )
-    )
-    db.commit()
-
-
 def _duration_ms(started_at: float) -> int:
     return max(int((perf_counter() - started_at) * 1000), 0)
+
+
+def _service_from_session(db: Session) -> AgentService:
+    return AgentService(lambda: SqlAlchemyUnitOfWork(lambda: db))
+
+
+def ensure_builtin_agents(db: Session) -> None:
+    _service_from_session(db).ensure_builtin_agents()
+
+
+def list_agents(db: Session, user: User | CurrentUser, page: int = 1, page_size: int = 20) -> PageResponse[AgentListItem]:
+    return _service_from_session(db).list_agents(_to_current_user(user), page=page, page_size=page_size)
+
+
+def stream_chat(
+    db: Session,
+    user: User | CurrentUser,
+    agent_id: int,
+    message: str,
+    conversation_id: int | None = None,
+    fund_code: str | None = None,
+) -> Iterator[AgentStreamEvent]:
+    yield from _service_from_session(db).stream_chat(
+        _to_current_user(user),
+        agent_id=agent_id,
+        message=message,
+        conversation_id=conversation_id,
+        fund_code=fund_code,
+    )
+
+
+def list_reports(
+    db: Session,
+    user: User | CurrentUser,
+    agent_id: int | None = None,
+    target_code: str | None = None,
+    page: int = 1,
+    page_size: int = 10,
+) -> PageResponse[AgentReportListItem]:
+    return _service_from_session(db).list_reports(
+        _to_current_user(user),
+        agent_id=agent_id,
+        target_code=target_code,
+        page=page,
+        page_size=page_size,
+    )
+
+
+def list_conversations(
+    db: Session,
+    user: User | CurrentUser,
+    agent_id: int,
+    page: int = 1,
+    page_size: int = 20,
+) -> PageResponse[AgentConversationListItem]:
+    return _service_from_session(db).list_conversations(_to_current_user(user), agent_id=agent_id, page=page, page_size=page_size)
+
+
+def get_conversation_detail(db: Session, user: User | CurrentUser, conversation_id: int) -> AgentConversationDetailResponse:
+    return _service_from_session(db).get_conversation_detail(_to_current_user(user), conversation_id)
+
+
+def get_report_detail(db: Session, user: User | CurrentUser, report_id: int) -> AgentReportDetailResponse:
+    return _service_from_session(db).get_report_detail(_to_current_user(user), report_id)

@@ -1,9 +1,10 @@
 from collections.abc import Iterator
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
 
+from app.api.dependencies import get_agent_service, get_current_user_context
 from app.api.routes.agent.agent_schema import (
     AgentListRequest,
     AgentChatStreamRequest,
@@ -13,11 +14,9 @@ from app.api.routes.agent.agent_schema import (
     AgentReportListRequest,
 )
 from app.core.auth import require_auth
+from app.core.current_user import CurrentUser
 from app.core.response import ApiResponse, success_response
-from app.core.security import get_current_user
-from app.db.models.user import User
-from app.db.session import get_db
-from app.services import agent_service
+from app.services.agent_service import AgentService
 from app.services.agent_event import AgentStreamEvent, encode_event_data
 
 router = APIRouter(prefix="/agents", tags=["agents"], dependencies=[require_auth()])
@@ -27,22 +26,21 @@ router = APIRouter(prefix="/agents", tags=["agents"], dependencies=[require_auth
 def list_agents(
     request: Request,
     payload: AgentListRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    service: Annotated[AgentService, Depends(get_agent_service)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user_context)],
 ) -> ApiResponse:
-    return success_response(request, agent_service.list_agents(db, current_user, page=payload.page, page_size=payload.page_size))
+    return success_response(request, service.list_agents(current_user, page=payload.page, page_size=payload.page_size))
 
 
 @router.post("/chat/stream", summary="流式智能体对话")
 def stream_agent_chat(
     payload: AgentChatStreamRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    service: Annotated[AgentService, Depends(get_agent_service)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user_context)],
 ) -> StreamingResponse:
     return StreamingResponse(
         _to_sse(
-            agent_service.stream_chat(
-                db,
+            service.stream_chat(
                 current_user,
                 agent_id=payload.agent_id,
                 message=payload.message,
@@ -62,13 +60,12 @@ def stream_agent_chat(
 def list_reports(
     request: Request,
     payload: AgentReportListRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    service: Annotated[AgentService, Depends(get_agent_service)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user_context)],
 ) -> ApiResponse:
     return success_response(
         request,
-        agent_service.list_reports(
-            db,
+        service.list_reports(
             current_user,
             agent_id=payload.agent_id,
             target_code=payload.target_code,
@@ -82,13 +79,12 @@ def list_reports(
 def list_conversations(
     request: Request,
     payload: AgentConversationListRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    service: Annotated[AgentService, Depends(get_agent_service)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user_context)],
 ) -> ApiResponse:
     return success_response(
         request,
-        agent_service.list_conversations(
-            db,
+        service.list_conversations(
             current_user,
             agent_id=payload.agent_id,
             page=payload.page,
@@ -101,20 +97,20 @@ def list_conversations(
 def get_conversation_detail(
     request: Request,
     payload: AgentConversationDetailRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    service: Annotated[AgentService, Depends(get_agent_service)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user_context)],
 ) -> ApiResponse:
-    return success_response(request, agent_service.get_conversation_detail(db, current_user, payload.conversation_id))
+    return success_response(request, service.get_conversation_detail(current_user, payload.conversation_id))
 
 
 @router.post("/reports/detail", response_model=ApiResponse, summary="查询智能体报告详情")
 def get_report_detail(
     request: Request,
     payload: AgentReportDetailRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    service: Annotated[AgentService, Depends(get_agent_service)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user_context)],
 ) -> ApiResponse:
-    return success_response(request, agent_service.get_report_detail(db, current_user, payload.id))
+    return success_response(request, service.get_report_detail(current_user, payload.id))
 
 
 def _to_sse(chunks: Iterator[AgentStreamEvent]):

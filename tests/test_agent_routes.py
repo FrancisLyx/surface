@@ -4,9 +4,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api import dependencies
 from app.db import session as db_session
 from app.db.base import Base
 from app.db.models.agent import AgentConversation, AgentDefinition, AgentMessage, AgentReport, AgentRun
+from app.db.uow import SqlAlchemyUnitOfWork
 from app.main import app
 from app.services import agent_runtime_service, agent_service
 
@@ -28,6 +30,7 @@ def make_client_with_session():
             db.close()
 
     app.dependency_overrides[db_session.get_db] = override_db
+    app.dependency_overrides[dependencies.get_uow_factory] = lambda: lambda: SqlAlchemyUnitOfWork(TestingSessionLocal)
     return TestClient(app), TestingSessionLocal
 
 
@@ -141,6 +144,32 @@ def test_stream_agent_chat_saves_conversation_and_messages(monkeypatch):
             assert runs[0].output_text == "可以先观望"
         finally:
             db.close()
+    finally:
+        clear_overrides()
+
+
+def test_stream_agent_chat_runtime_does_not_receive_live_db_session(monkeypatch):
+    monkeypatch.setenv("USER_REGISTRATION_ENABLED", "true")
+
+    def fake_stream_agent_chat(agent: AgentDefinition, payload: dict, history: list[dict], user, db):
+        assert db is None
+        yield message_event("可以先观望")
+
+    monkeypatch.setattr(agent_runtime_service, "stream_agent_chat", fake_stream_agent_chat)
+
+    client, _ = make_client_with_session()
+    try:
+        token = register_and_login(client)
+        with client.stream(
+            "POST",
+            "/api/v1/agents/chat/stream",
+            json={"agent_id": 1, "message": "今天怎么看？", "fund_code": "110010"},
+            headers={"Authorization": f"Bearer {token}"},
+        ) as response:
+            body = response.read().decode("utf-8")
+
+        assert response.status_code == 200
+        assert "可以先观望" in body
     finally:
         clear_overrides()
 
