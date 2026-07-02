@@ -1,5 +1,3 @@
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 
 from app.api.routes.agent.agent_view import router as agent_router
@@ -9,17 +7,11 @@ from app.api.routes.ai.ai_view import router as ai_router
 from app.api.routes.settings.settings_view import router as settings_router
 from app.api.routes.user.user_view import router as user_router
 from app.core.exception import register_exception_handlers
+from app.core.lifespan import app_lifespan
 from app.core.middleware import register_request_middleware
-from app.db.session import init_db
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    init_db()
-    yield
-
-
-app = FastAPI(title="Surface API", lifespan=lifespan)
+app = FastAPI(title="Surface API", lifespan=app_lifespan)
 register_request_middleware(app)
 register_exception_handlers(app)
 app.include_router(health_router, prefix="/api/v1")

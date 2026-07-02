@@ -85,3 +85,18 @@ def test_startup_reports_initialized_state():
     assert response.status_code == 200
     assert response.json()["data"]["status"] == "ok"
     assert response.json()["data"]["startup_complete"] is True
+
+
+def test_app_lifespan_sets_startup_complete_state():
+    if hasattr(app.state, "startup_complete"):
+        delattr(app.state, "startup_complete")
+
+    with TestClient(app) as client:
+        assert hasattr(app.state, "startup_complete")
+        response = client.get("/api/v1/health/startup")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "status": "ok",
+        "startup_complete": True,
+    }
