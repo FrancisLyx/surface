@@ -1,11 +1,16 @@
 from fastapi.testclient import TestClient
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api import dependencies
+from app.core.current_user import CurrentUser
+from app.core.exception import NotFoundError
 from app.db import session as db_session
 from app.db.base import Base
 from app.db.models.ai_fund_report import AiFundReport
+from app.db.uow import SqlAlchemyUnitOfWork
 from app.main import app
 from app.services import ai_fund_service
 
@@ -27,6 +32,7 @@ def make_client() -> TestClient:
             db.close()
 
     app.dependency_overrides[db_session.get_db] = override_db
+    app.dependency_overrides[dependencies.get_uow_factory] = lambda: lambda: SqlAlchemyUnitOfWork(TestingSessionLocal)
     return TestClient(app)
 
 
@@ -47,6 +53,7 @@ def make_client_with_session():
             db.close()
 
     app.dependency_overrides[db_session.get_db] = override_db
+    app.dependency_overrides[dependencies.get_uow_factory] = lambda: lambda: SqlAlchemyUnitOfWork(TestingSessionLocal)
     return TestClient(app), TestingSessionLocal
 
 
@@ -72,6 +79,28 @@ def register_and_login(client: TestClient) -> str:
     )
     assert login_response.status_code == 200
     return login_response.json()["data"]["access_token"]
+
+
+def test_ai_report_service_returns_not_found_for_other_user():
+    from app.services.ai_fund_report_service import AiFundReportService
+
+    class FakeReports:
+        def get_by_id_for_user(self, report_id, user_id):
+            return None
+
+    class FakeUow:
+        ai_fund_reports = FakeReports()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            pass
+
+    service = AiFundReportService(lambda: FakeUow())
+
+    with pytest.raises(NotFoundError, match="report not found"):
+        service.get_report_detail(CurrentUser(id=2, username="guest"), 1)
 
 
 def test_stream_fund_summary_requires_token():

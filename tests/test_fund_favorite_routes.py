@@ -1,10 +1,15 @@
 from fastapi.testclient import TestClient
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api import dependencies
+from app.api.routes.fund.fund_schema import FavoriteFundAddRequest
+from app.core.current_user import CurrentUser
 from app.db import session as db_session
 from app.db.base import Base
+from app.db.uow import SqlAlchemyUnitOfWork
 from app.main import app
 from app.clients import akshare_client
 
@@ -38,11 +43,71 @@ def make_client() -> TestClient:
             db.close()
 
     app.dependency_overrides[db_session.get_db] = override_db
+    app.dependency_overrides[dependencies.get_uow_factory] = lambda: lambda: SqlAlchemyUnitOfWork(TestingSessionLocal)
     return TestClient(app)
 
 
 def clear_overrides() -> None:
     app.dependency_overrides.clear()
+
+
+def test_favorite_service_accepts_current_user_context():
+    from app.services.fund_favorite_service import FundFavoriteService
+
+    class FakeFavorite:
+        id = None
+        user_id = None
+        fund_code = ""
+        fund_name = ""
+        fund_type = None
+        created_at = None
+
+        def __init__(self, user_id: int, fund_code: str, fund_name: str, fund_type: str | None):
+            self.user_id = user_id
+            self.fund_code = fund_code
+            self.fund_name = fund_name
+            self.fund_type = fund_type
+
+    class FakeFavorites:
+        def __init__(self):
+            self.added_user_id = None
+
+        def get_by_user_and_code(self, user_id, fund_code):
+            return None
+
+        def add(self, favorite):
+            self.added_user_id = favorite.user_id
+
+        def refresh(self, favorite):
+            from datetime import datetime
+
+            favorite.id = 10
+            favorite.created_at = datetime(2026, 1, 1)
+
+    class FakeUow:
+        def __init__(self):
+            self.fund_favorites = FakeFavorites()
+            self.committed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            pass
+
+        def commit(self):
+            self.committed = True
+
+    uow = FakeUow()
+    service = FundFavoriteService(lambda: uow, favorite_model=FakeFavorite)
+    result = service.add_favorite_fund(
+        CurrentUser(id=7, username="admin"),
+        FavoriteFundAddRequest(fund_code="000001", fund_name="华夏成长混合", fund_type="混合型"),
+    )
+
+    assert uow.fund_favorites.added_user_id == 7
+    assert uow.committed is True
+    assert result.fund_code == "000001"
 
 
 def register_and_login(client: TestClient, username: str, email: str, phone: str) -> str:

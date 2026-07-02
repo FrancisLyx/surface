@@ -1,20 +1,20 @@
 from collections.abc import Iterator
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
 
+from app.api.dependencies import get_ai_fund_report_service, get_current_user_context
 from app.api.routes.ai.ai_schema import (
     AiFundReportDetailRequest,
     AiFundReportListRequest,
     AiFundSummaryRequest,
 )
 from app.core.auth import require_auth
+from app.core.current_user import CurrentUser
 from app.core.response import ApiResponse, success_response
-from app.core.security import get_current_user
-from app.db.models.user import User
-from app.db.session import get_db
-from app.services import ai_fund_report_service, ai_fund_service
+from app.services import ai_fund_service
+from app.services.ai_fund_report_service import AiFundReportService
 
 router = APIRouter(prefix="/ai", tags=["ai"], dependencies=[require_auth()])
 
@@ -23,13 +23,12 @@ router = APIRouter(prefix="/ai", tags=["ai"], dependencies=[require_auth()])
 def list_fund_reports(
     request: Request,
     payload: AiFundReportListRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    report_service: Annotated[AiFundReportService, Depends(get_ai_fund_report_service)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user_context)],
 ) -> ApiResponse:
     return success_response(
         request,
-        ai_fund_report_service.list_reports(
-            db,
+        report_service.list_reports(
             current_user,
             fund_code=payload.fund_code,
             page=payload.page,
@@ -42,22 +41,22 @@ def list_fund_reports(
 def get_fund_report_detail(
     request: Request,
     payload: AiFundReportDetailRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    report_service: Annotated[AiFundReportService, Depends(get_ai_fund_report_service)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user_context)],
 ) -> ApiResponse:
-    return success_response(request, ai_fund_report_service.get_report_detail(db, current_user, payload.id))
+    return success_response(request, report_service.get_report_detail(current_user, payload.id))
 
 
 @router.post("/funds/summary/stream", summary="流式生成基金 AI 解读")
 def stream_fund_summary(
     payload: AiFundSummaryRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    report_service: Annotated[AiFundReportService, Depends(get_ai_fund_report_service)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user_context)],
 ) -> StreamingResponse:
     return StreamingResponse(
         _to_sse_and_save(
             chunks=ai_fund_service.stream_fund_summary(payload.fund_code),
-            db=db,
+            report_service=report_service,
             current_user=current_user,
             fund_code=payload.fund_code,
         ),
@@ -69,7 +68,12 @@ def stream_fund_summary(
     )
 
 
-def _to_sse_and_save(chunks: Iterator[str], db: Session, current_user: User, fund_code: str):
+def _to_sse_and_save(
+    chunks: Iterator[str],
+    report_service: AiFundReportService,
+    current_user: CurrentUser,
+    fund_code: str,
+):
     report_chunks: list[str] = []
     for chunk in chunks:
         report_chunks.append(chunk)
@@ -77,7 +81,7 @@ def _to_sse_and_save(chunks: Iterator[str], db: Session, current_user: User, fun
 
     content = "".join(report_chunks)
     if content:
-        ai_fund_report_service.create_report(db, current_user, fund_code, content)
+        report_service.create_report(current_user, fund_code, content)
     yield "event: done\ndata: [DONE]\n\n"
 
 

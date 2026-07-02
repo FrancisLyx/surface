@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.orm import Session
+from typing import Annotated
 
+from fastapi import APIRouter, Depends, Request
+
+from app.api.dependencies import get_current_user_context, get_fund_favorite_service
 from app.api.routes.fund.fund_schema import (
     FavoriteFundAddRequest,
     FavoriteFundCodeRequest,
@@ -14,10 +16,9 @@ from app.api.routes.fund.fund_schema import (
 )
 from app.core.response import ApiResponse, success_response
 from app.core.auth import require_auth
-from app.core.security import get_current_user
-from app.db.models.user import User
-from app.db.session import get_db
-from app.services import fund_favorite_service, fund_service
+from app.core.current_user import CurrentUser
+from app.services import fund_service
+from app.services.fund_favorite_service import FundFavoriteService
 
 router = APIRouter(prefix="", tags=["fund"], dependencies=[require_auth()])
 
@@ -38,23 +39,22 @@ def list_funds(request: Request, payload: FundSearchRequest) -> ApiResponse:
 def add_favorite_fund(
     request: Request,
     payload: FavoriteFundAddRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    service: Annotated[FundFavoriteService, Depends(get_fund_favorite_service)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user_context)],
 ) -> ApiResponse:
-    return success_response(request, fund_favorite_service.add_favorite_fund(db, current_user, payload))
+    return success_response(request, service.add_favorite_fund(current_user, payload))
 
 
 @router.post("/funds/favorites/list", response_model=ApiResponse, summary="查询我的自选基金")
 def list_favorite_funds(
     request: Request,
     payload: FavoriteFundSearchRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    service: Annotated[FundFavoriteService, Depends(get_fund_favorite_service)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user_context)],
 ) -> ApiResponse:
     return success_response(
         request,
-        fund_favorite_service.list_favorite_funds(
-            db,
+        service.list_favorite_funds(
             current_user,
             keyword=payload.keyword,
             page=payload.page,
@@ -66,23 +66,22 @@ def list_favorite_funds(
 @router.post("/funds/favorites/options", response_model=ApiResponse, summary="查询我的自选基金选项")
 def list_favorite_fund_options(
     request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    service: Annotated[FundFavoriteService, Depends(get_fund_favorite_service)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user_context)],
 ) -> ApiResponse:
-    return success_response(request, fund_favorite_service.list_favorite_fund_options(db, current_user))
+    return success_response(request, service.list_favorite_fund_options(current_user))
 
 
 @router.post("/funds/favorites/estimations", response_model=ApiResponse, summary="查询我的自选基金净值估算")
 def list_favorite_fund_estimations(
     request: Request,
     payload: FavoriteFundSearchRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    service: Annotated[FundFavoriteService, Depends(get_fund_favorite_service)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user_context)],
 ) -> ApiResponse:
     return success_response(
         request,
-        fund_favorite_service.list_favorite_fund_estimations(
-            db,
+        service.list_favorite_fund_estimations(
             current_user,
             keyword=payload.keyword,
             page=payload.page,
@@ -95,13 +94,12 @@ def list_favorite_fund_estimations(
 def get_favorite_fund_report(
     request: Request,
     payload: FavoriteFundSearchRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    service: Annotated[FundFavoriteService, Depends(get_fund_favorite_service)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user_context)],
 ) -> ApiResponse:
     return success_response(
         request,
-        fund_favorite_service.get_favorite_fund_report(
-            db,
+        service.get_favorite_fund_report(
             current_user,
             keyword=payload.keyword,
             page=payload.page,
@@ -114,12 +112,12 @@ def get_favorite_fund_report(
 def check_favorite_fund(
     request: Request,
     payload: FavoriteFundCodeRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    service: Annotated[FundFavoriteService, Depends(get_fund_favorite_service)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user_context)],
 ) -> ApiResponse:
     return success_response(
         request,
-        fund_favorite_service.check_favorite_fund(db, current_user, payload.fund_code),
+        service.check_favorite_fund(current_user, payload.fund_code),
     )
 
 
@@ -127,12 +125,12 @@ def check_favorite_fund(
 def remove_favorite_fund(
     request: Request,
     payload: FavoriteFundCodeRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    service: Annotated[FundFavoriteService, Depends(get_fund_favorite_service)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user_context)],
 ) -> ApiResponse:
     return success_response(
         request,
-        fund_favorite_service.remove_favorite_fund(db, current_user, payload.fund_code),
+        service.remove_favorite_fund(current_user, payload.fund_code),
     )
 
 

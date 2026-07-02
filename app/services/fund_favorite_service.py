@@ -1,6 +1,6 @@
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.routes.fund.fund_schema import (
@@ -15,109 +15,188 @@ from app.api.routes.fund.fund_schema import (
     FavoriteFundReportResponse,
     FavoriteFundReportSummary,
 )
+from app.core.current_user import CurrentUser
 from app.core.pagination import PageResponse
 from app.db.models.fund_favorite import UserFavoriteFund
 from app.db.models.user import User
+from app.db.uow import SqlAlchemyUnitOfWork
 from app.services import fund_service
 
 
-def add_favorite_fund(db: Session, user: User, payload: FavoriteFundAddRequest) -> FavoriteFundItem:
-    fund_code = payload.fund_code.strip()
-    fund_name = payload.fund_name.strip()
-    fund_type = payload.fund_type.strip() if payload.fund_type else None
+class FundFavoriteService:
+    def __init__(
+        self,
+        uow_factory: Callable[[], SqlAlchemyUnitOfWork],
+        favorite_model: type = UserFavoriteFund,
+    ) -> None:
+        self._uow_factory = uow_factory
+        self._favorite_model = favorite_model
 
-    favorite = db.scalar(
-        select(UserFavoriteFund).where(
-            UserFavoriteFund.user_id == user.id,
-            UserFavoriteFund.fund_code == fund_code,
-        )
-    )
-    if favorite is None:
-        favorite = UserFavoriteFund(
-            user_id=user.id,
-            fund_code=fund_code,
-            fund_name=fund_name,
-            fund_type=fund_type,
-        )
-        db.add(favorite)
-    else:
-        favorite.fund_name = fund_name
-        favorite.fund_type = fund_type
+    def add_favorite_fund(self, user: CurrentUser, payload: FavoriteFundAddRequest) -> FavoriteFundItem:
+        fund_code = payload.fund_code.strip()
+        fund_name = payload.fund_name.strip()
+        fund_type = payload.fund_type.strip() if payload.fund_type else None
 
-    db.commit()
-    db.refresh(favorite)
-    return _to_item(favorite)
+        with self._uow_factory() as uow:
+            favorite = uow.fund_favorites.get_by_user_and_code(user.id, fund_code)
+            if favorite is None:
+                favorite = self._favorite_model(
+                    user_id=user.id,
+                    fund_code=fund_code,
+                    fund_name=fund_name,
+                    fund_type=fund_type,
+                )
+                uow.fund_favorites.add(favorite)
+            else:
+                favorite.fund_name = fund_name
+                favorite.fund_type = fund_type
+
+            uow.commit()
+            uow.fund_favorites.refresh(favorite)
+            return _to_item(favorite)
+
+    def list_favorite_funds(
+        self,
+        user: CurrentUser,
+        keyword: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> PageResponse[FavoriteFundItem]:
+        with self._uow_factory() as uow:
+            total = uow.fund_favorites.count_for_user(user.id, keyword)
+            pages = (total + page_size - 1) // page_size if total else 0
+            offset = (page - 1) * page_size
+            favorites = uow.fund_favorites.list_for_user(user.id, keyword=keyword, offset=offset, limit=page_size)
+            return PageResponse(
+                page=page,
+                page_size=page_size,
+                total=total,
+                pages=pages,
+                items=[_to_item(favorite) for favorite in favorites],
+            )
+
+    def list_favorite_fund_options(self, user: CurrentUser) -> list[FavoriteFundOptionItem]:
+        with self._uow_factory() as uow:
+            favorites = uow.fund_favorites.list_options_for_user(user.id)
+            return [_to_option_item(favorite) for favorite in favorites]
+
+    def list_favorite_fund_estimations(
+        self,
+        user: CurrentUser,
+        keyword: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> PageResponse[FavoriteFundEstimationItem]:
+        favorite_page = self.list_favorite_funds(user, keyword=keyword, page=page, page_size=page_size)
+        estimations = _load_favorite_estimations(favorite_page.items)
+        return PageResponse(
+            page=favorite_page.page,
+            page_size=favorite_page.page_size,
+            total=favorite_page.total,
+            pages=favorite_page.pages,
+            items=[
+                _to_estimation_item(favorite, estimations.get(favorite.fund_code))
+                for favorite in favorite_page.items
+            ],
+        )
+
+    def get_favorite_fund_report(
+        self,
+        user: CurrentUser,
+        keyword: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> FavoriteFundReportResponse:
+        favorite_page = self.list_favorite_fund_estimations(user, keyword=keyword, page=page, page_size=page_size)
+        items = favorite_page.items
+        alerts = _build_alerts(items)
+        estimated_items = [item for item in items if item.has_estimation]
+        up_items = [item for item in estimated_items if _parse_percent(item.estimated_growth_rate) > 0]
+        down_items = [item for item in estimated_items if _parse_percent(item.estimated_growth_rate) < 0]
+        flat_items = [item for item in estimated_items if _parse_percent(item.estimated_growth_rate) == 0]
+
+        summary = FavoriteFundReportSummary(
+            total=favorite_page.total,
+            estimated_count=len(estimated_items),
+            up_count=len(up_items),
+            down_count=len(down_items),
+            flat_count=len(flat_items),
+            missing_count=len(items) - len(estimated_items),
+            alert_count=len(alerts),
+            max_up=_build_extreme(max(up_items, key=lambda item: _parse_percent(item.estimated_growth_rate), default=None)),
+            max_down=_build_extreme(min(down_items, key=lambda item: _parse_percent(item.estimated_growth_rate), default=None)),
+        )
+        return FavoriteFundReportResponse(summary=summary, alerts=alerts, page=favorite_page)
+
+    def check_favorite_fund(self, user: CurrentUser, fund_code: str) -> FavoriteFundCheckResponse:
+        normalized_code = fund_code.strip()
+        with self._uow_factory() as uow:
+            return FavoriteFundCheckResponse(
+                favorited=uow.fund_favorites.exists_for_user(user.id, normalized_code)
+            )
+
+    def remove_favorite_fund(self, user: CurrentUser, fund_code: str) -> FavoriteFundRemoveResponse:
+        normalized_code = fund_code.strip()
+        with self._uow_factory() as uow:
+            removed_count = uow.fund_favorites.remove_for_user(user.id, normalized_code)
+            uow.commit()
+            return FavoriteFundRemoveResponse(removed=removed_count > 0)
+
+
+def _to_current_user(user: User | CurrentUser) -> CurrentUser:
+    if isinstance(user, CurrentUser):
+        return user
+    return CurrentUser(id=user.id, username=user.username, email=user.email, phone=user.phone, role_id=user.role_id)
+
+
+def _service_from_session(db: Session) -> FundFavoriteService:
+    return FundFavoriteService(lambda: SqlAlchemyUnitOfWork(lambda: db))
+
+
+def add_favorite_fund(db: Session, user: User | CurrentUser, payload: FavoriteFundAddRequest) -> FavoriteFundItem:
+    return _service_from_session(db).add_favorite_fund(_to_current_user(user), payload)
 
 
 def list_favorite_funds(
     db: Session,
-    user: User,
+    user: User | CurrentUser,
     keyword: str | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> PageResponse[FavoriteFundItem]:
-    filters = [UserFavoriteFund.user_id == user.id]
-    normalized_keyword = keyword.strip() if keyword else None
-    if normalized_keyword:
-        like_keyword = f"%{normalized_keyword}%"
-        filters.append(
-            or_(
-                UserFavoriteFund.fund_code.ilike(like_keyword),
-                UserFavoriteFund.fund_name.ilike(like_keyword),
-                UserFavoriteFund.fund_type.ilike(like_keyword),
-            )
-        )
-
-    where_clause = and_(*filters)
-    total = db.scalar(select(func.count()).select_from(UserFavoriteFund).where(where_clause)) or 0
-    pages = (total + page_size - 1) // page_size if total else 0
-    offset = (page - 1) * page_size
-    favorites = db.scalars(
-        select(UserFavoriteFund)
-        .where(where_clause)
-        .order_by(UserFavoriteFund.created_at.desc(), UserFavoriteFund.id.desc())
-        .offset(offset)
-        .limit(page_size)
-    ).all()
-
-    return PageResponse(
-        page=page,
-        page_size=page_size,
-        total=total,
-        pages=pages,
-        items=[_to_item(favorite) for favorite in favorites],
-    )
+    return _service_from_session(db).list_favorite_funds(_to_current_user(user), keyword=keyword, page=page, page_size=page_size)
 
 
-def list_favorite_fund_options(db: Session, user: User) -> list[FavoriteFundOptionItem]:
-    favorites = db.scalars(
-        select(UserFavoriteFund)
-        .where(UserFavoriteFund.user_id == user.id)
-        .order_by(UserFavoriteFund.created_at.desc(), UserFavoriteFund.id.desc())
-    ).all()
-    return [_to_option_item(favorite) for favorite in favorites]
+def list_favorite_fund_options(db: Session, user: User | CurrentUser) -> list[FavoriteFundOptionItem]:
+    return _service_from_session(db).list_favorite_fund_options(_to_current_user(user))
 
 
 def list_favorite_fund_estimations(
     db: Session,
-    user: User,
+    user: User | CurrentUser,
     keyword: str | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> PageResponse[FavoriteFundEstimationItem]:
-    favorite_page = list_favorite_funds(db, user, keyword=keyword, page=page, page_size=page_size)
-    estimations = _load_favorite_estimations(favorite_page.items)
+    return _service_from_session(db).list_favorite_fund_estimations(_to_current_user(user), keyword=keyword, page=page, page_size=page_size)
 
-    return PageResponse(
-        page=favorite_page.page,
-        page_size=favorite_page.page_size,
-        total=favorite_page.total,
-        pages=favorite_page.pages,
-        items=[
-            _to_estimation_item(favorite, estimations.get(favorite.fund_code))
-            for favorite in favorite_page.items
-        ],
-    )
+
+def get_favorite_fund_report(
+    db: Session,
+    user: User | CurrentUser,
+    keyword: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> FavoriteFundReportResponse:
+    return _service_from_session(db).get_favorite_fund_report(_to_current_user(user), keyword=keyword, page=page, page_size=page_size)
+
+
+def check_favorite_fund(db: Session, user: User | CurrentUser, fund_code: str) -> FavoriteFundCheckResponse:
+    return _service_from_session(db).check_favorite_fund(_to_current_user(user), fund_code)
+
+
+def remove_favorite_fund(db: Session, user: User | CurrentUser, fund_code: str) -> FavoriteFundRemoveResponse:
+    return _service_from_session(db).remove_favorite_fund(_to_current_user(user), fund_code)
 
 
 def _load_favorite_estimations(favorites: list[FavoriteFundItem]) -> dict[str, object]:
@@ -142,59 +221,7 @@ def _load_favorite_estimations(favorites: list[FavoriteFundItem]) -> dict[str, o
     return estimations
 
 
-def get_favorite_fund_report(
-    db: Session,
-    user: User,
-    keyword: str | None = None,
-    page: int = 1,
-    page_size: int = 20,
-) -> FavoriteFundReportResponse:
-    favorite_page = list_favorite_fund_estimations(db, user, keyword=keyword, page=page, page_size=page_size)
-    items = favorite_page.items
-    alerts = _build_alerts(items)
-    estimated_items = [item for item in items if item.has_estimation]
-    up_items = [item for item in estimated_items if _parse_percent(item.estimated_growth_rate) > 0]
-    down_items = [item for item in estimated_items if _parse_percent(item.estimated_growth_rate) < 0]
-    flat_items = [item for item in estimated_items if _parse_percent(item.estimated_growth_rate) == 0]
-
-    summary = FavoriteFundReportSummary(
-        total=favorite_page.total,
-        estimated_count=len(estimated_items),
-        up_count=len(up_items),
-        down_count=len(down_items),
-        flat_count=len(flat_items),
-        missing_count=len(items) - len(estimated_items),
-        alert_count=len(alerts),
-        max_up=_build_extreme(max(up_items, key=lambda item: _parse_percent(item.estimated_growth_rate), default=None)),
-        max_down=_build_extreme(min(down_items, key=lambda item: _parse_percent(item.estimated_growth_rate), default=None)),
-    )
-    return FavoriteFundReportResponse(summary=summary, alerts=alerts, page=favorite_page)
-
-
-def check_favorite_fund(db: Session, user: User, fund_code: str) -> FavoriteFundCheckResponse:
-    normalized_code = fund_code.strip()
-    favorite_id = db.scalar(
-        select(UserFavoriteFund.id).where(
-            UserFavoriteFund.user_id == user.id,
-            UserFavoriteFund.fund_code == normalized_code,
-        )
-    )
-    return FavoriteFundCheckResponse(favorited=favorite_id is not None)
-
-
-def remove_favorite_fund(db: Session, user: User, fund_code: str) -> FavoriteFundRemoveResponse:
-    normalized_code = fund_code.strip()
-    result = db.execute(
-        delete(UserFavoriteFund).where(
-            UserFavoriteFund.user_id == user.id,
-            UserFavoriteFund.fund_code == normalized_code,
-        )
-    )
-    db.commit()
-    return FavoriteFundRemoveResponse(removed=(result.rowcount or 0) > 0)
-
-
-def _to_item(favorite: UserFavoriteFund) -> FavoriteFundItem:
+def _to_item(favorite) -> FavoriteFundItem:
     return FavoriteFundItem(
         id=favorite.id,
         fund_code=favorite.fund_code,
@@ -204,7 +231,7 @@ def _to_item(favorite: UserFavoriteFund) -> FavoriteFundItem:
     )
 
 
-def _to_option_item(favorite: UserFavoriteFund) -> FavoriteFundOptionItem:
+def _to_option_item(favorite) -> FavoriteFundOptionItem:
     return FavoriteFundOptionItem(
         fund_code=favorite.fund_code,
         fund_name=favorite.fund_name,

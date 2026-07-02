@@ -5,12 +5,20 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 
-from app.bootstrap import create_system_setting_service, create_uow_factory, create_user_service
+from app.bootstrap import (
+    create_ai_fund_report_service,
+    create_fund_favorite_service,
+    create_system_setting_service,
+    create_uow_factory,
+    create_user_service,
+)
 from app.core.config import Settings, get_settings
 from app.core.current_user import CurrentUser
 from app.core.security import bearer_scheme
 from app.db.session import SessionLocal
 from app.db.uow import SqlAlchemyUnitOfWork
+from app.services.ai_fund_report_service import AiFundReportService
+from app.services.fund_favorite_service import FundFavoriteService
 from app.services.system_setting_service import SystemSettingService
 from app.services.user_service import UserService
 
@@ -32,6 +40,18 @@ def get_system_setting_service(
     uow_factory: Annotated[UowFactory, Depends(get_uow_factory)],
 ) -> SystemSettingService:
     return create_system_setting_service(uow_factory)
+
+
+def get_fund_favorite_service(
+    uow_factory: Annotated[UowFactory, Depends(get_uow_factory)],
+) -> FundFavoriteService:
+    return create_fund_favorite_service(uow_factory)
+
+
+def get_ai_fund_report_service(
+    uow_factory: Annotated[UowFactory, Depends(get_uow_factory)],
+) -> AiFundReportService:
+    return create_ai_fund_report_service(uow_factory)
 
 
 def get_current_user_context(
