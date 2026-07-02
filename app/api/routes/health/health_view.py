@@ -8,8 +8,19 @@ from app.db.session import get_db
 router = APIRouter(prefix="/health", tags=["health"])
 
 
-@router.get("", response_model=ApiResponse, summary="健康检查")
-def health_check(request: Request, db: Session = Depends(get_db)) -> ApiResponse:
+@router.get("/live", response_model=ApiResponse, summary="存活检查")
+def liveness_check(request: Request) -> ApiResponse:
+    return success_response(
+        request,
+        {
+            "status": "ok",
+            "service": "alive",
+        },
+    )
+
+
+@router.get("/ready", response_model=ApiResponse, summary="就绪检查")
+def readiness_check(request: Request, db: Session = Depends(get_db)) -> ApiResponse:
     db.execute(text("select 1")).scalar_one()
     return success_response(
         request,
@@ -18,3 +29,20 @@ def health_check(request: Request, db: Session = Depends(get_db)) -> ApiResponse
             "database": "ok",
         },
     )
+
+
+@router.get("/startup", response_model=ApiResponse, summary="启动检查")
+def startup_check(request: Request) -> ApiResponse:
+    startup_complete = bool(getattr(request.app.state, "startup_complete", True))
+    return success_response(
+        request,
+        {
+            "status": "ok" if startup_complete else "starting",
+            "startup_complete": startup_complete,
+        },
+    )
+
+
+@router.get("", response_model=ApiResponse, summary="健康检查")
+def health_check(request: Request, db: Session = Depends(get_db)) -> ApiResponse:
+    return readiness_check(request, db)

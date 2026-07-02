@@ -4,7 +4,25 @@ from app.db import session as db_session
 from app.main import app
 
 
-def test_health_endpoint_reports_database_ok(monkeypatch):
+def test_liveness_does_not_open_database_session():
+    def fail_get_db():
+        raise AssertionError("live health must not access database")
+        yield
+
+    app.dependency_overrides[db_session.get_db] = fail_get_db
+    try:
+        response = TestClient(app).get("/api/v1/health/live")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "status": "ok",
+        "service": "alive",
+    }
+
+
+def test_readiness_reports_database_ok():
     class FakeScalarResult:
         def scalar_one(self):
             return 1
@@ -21,9 +39,9 @@ def test_health_endpoint_reports_database_ok(monkeypatch):
 
     app.dependency_overrides[db_session.get_db] = fake_get_db
     try:
-      response = TestClient(app).get("/api/v1/health")
+        response = TestClient(app).get("/api/v1/health/ready")
     finally:
-      app.dependency_overrides.clear()
+        app.dependency_overrides.clear()
 
     assert response.status_code == 200
     assert response.json()["code"] == 200
@@ -31,3 +49,39 @@ def test_health_endpoint_reports_database_ok(monkeypatch):
         "status": "ok",
         "database": "ok",
     }
+
+
+def test_health_alias_reports_readiness():
+    class FakeScalarResult:
+        def scalar_one(self):
+            return 1
+
+    class FakeSession:
+        def execute(self, statement):
+            return FakeScalarResult()
+
+        def close(self):
+            pass
+
+    def fake_get_db():
+        yield FakeSession()
+
+    app.dependency_overrides[db_session.get_db] = fake_get_db
+    try:
+        response = TestClient(app).get("/api/v1/health")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "status": "ok",
+        "database": "ok",
+    }
+
+
+def test_startup_reports_initialized_state():
+    response = TestClient(app).get("/api/v1/health/startup")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "ok"
+    assert response.json()["data"]["startup_complete"] is True

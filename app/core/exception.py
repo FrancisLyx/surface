@@ -9,7 +9,39 @@ from app.core.response import error_response
 logger = logging.getLogger("app.exception")
 
 
+class ApplicationError(Exception):
+    status_code = 400
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class ValidationError(ApplicationError):
+    status_code = 400
+
+
+class UnauthorizedError(ApplicationError):
+    status_code = 401
+
+
+class ForbiddenError(ApplicationError):
+    status_code = 403
+
+
+class NotFoundError(ApplicationError):
+    status_code = 404
+
+
+class ConflictError(ApplicationError):
+    status_code = 400
+
+
 def register_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(ApplicationError)
+    async def application_exception_handler(request: Request, exc: ApplicationError) -> JSONResponse:
+        return _error_response(request, exc.status_code, exc.message)
+
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
         return _error_response(request, exc.status_code, str(exc.detail))
