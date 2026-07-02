@@ -3,7 +3,7 @@ import pytest
 
 from app.main import app
 from app.api.dependencies import get_current_user_context
-from app.clients import akshare_client
+from app.infrastructure.clients import akshare_client
 from app.core.current_user import CurrentUser
 from app.core.exception import NotFoundError, ValidationError
 from app.modules.fund import service as fund_service
@@ -23,7 +23,9 @@ class EmptyDailyNavData:
 
 @pytest.fixture(autouse=True)
 def override_current_user():
-    app.dependency_overrides[get_current_user_context] = lambda: CurrentUser(id=1, username="admin")
+    app.dependency_overrides[get_current_user_context] = lambda: CurrentUser(
+        id=1, username="admin"
+    )
     yield
     app.dependency_overrides.pop(get_current_user_context, None)
 
@@ -81,14 +83,16 @@ def test_list_funds_filters_by_keyword(monkeypatch):
 
 
 def test_fund_service_raises_application_exception_for_missing_fund_code():
-    from app.modules.fund.schema import FundValueRequest
+    from app.modules.fund.schemas import FundValueRequest
 
     with pytest.raises(ValidationError, match="fund_code is required"):
         fund_service.get_fund_value(FundValueRequest(fund_code=" ", source="auto"))
 
 
 def test_fund_service_raises_application_exception_for_missing_estimation(monkeypatch):
-    monkeypatch.setattr(akshare_client, "get_fund_realtime_estimation", lambda symbol: {}, raising=False)
+    monkeypatch.setattr(
+        akshare_client, "get_fund_realtime_estimation", lambda symbol: {}, raising=False
+    )
 
     class EmptyEstimationData:
         def fillna(self, value):
@@ -101,7 +105,11 @@ def test_fund_service_raises_application_exception_for_missing_estimation(monkey
         def iterrows(self):
             yield from enumerate([])
 
-    monkeypatch.setattr(akshare_client, "get_fund_estimations", lambda category="全部": EmptyEstimationData())
+    monkeypatch.setattr(
+        akshare_client,
+        "get_fund_estimations",
+        lambda category="全部": EmptyEstimationData(),
+    )
 
     with pytest.raises(NotFoundError, match="Fund estimation not found: 000001"):
         fund_service.get_fund_estimation("000001")
@@ -119,7 +127,9 @@ def test_get_fund_detail(monkeypatch):
             ]
             yield from enumerate(rows)
 
-    monkeypatch.setattr(akshare_client, "get_fund_detail", lambda symbol: FundDetailData())
+    monkeypatch.setattr(
+        akshare_client, "get_fund_detail", lambda symbol: FundDetailData()
+    )
 
     response = TestClient(app).post("/api/v1/funds/detail", json={"symbol": "000001"})
 
@@ -185,7 +195,9 @@ def test_list_fund_estimations_filters_by_keyword(monkeypatch):
         "get_fund_estimations",
         lambda category="全部": FundEstimationData(),
     )
-    monkeypatch.setattr(akshare_client, "get_open_fund_daily", lambda: EmptyDailyNavData())
+    monkeypatch.setattr(
+        akshare_client, "get_open_fund_daily", lambda: EmptyDailyNavData()
+    )
 
     response = TestClient(app).post(
         "/api/v1/funds/estimations/search",
@@ -316,7 +328,9 @@ def test_list_fund_estimations_omits_deviation_when_published_date_differs(monke
         "get_fund_estimations",
         lambda category="全部": FundEstimationData(),
     )
-    monkeypatch.setattr(akshare_client, "get_open_fund_daily", lambda: EmptyDailyNavData())
+    monkeypatch.setattr(
+        akshare_client, "get_open_fund_daily", lambda: EmptyDailyNavData()
+    )
 
     class DailyNavData:
         def fillna(self, value):
@@ -372,7 +386,9 @@ def test_list_fund_estimations_omits_deviation_when_published_date_differs(monke
 
 def test_get_fund_estimation_by_symbol(monkeypatch):
     def fail_full_estimation_query(category="全部"):
-        raise AssertionError("full estimation list should not be loaded for single fund estimation")
+        raise AssertionError(
+            "full estimation list should not be loaded for single fund estimation"
+        )
 
     monkeypatch.setattr(
         akshare_client,
@@ -388,9 +404,13 @@ def test_get_fund_estimation_by_symbol(monkeypatch):
         },
         raising=False,
     )
-    monkeypatch.setattr(akshare_client, "get_fund_estimations", fail_full_estimation_query)
+    monkeypatch.setattr(
+        akshare_client, "get_fund_estimations", fail_full_estimation_query
+    )
 
-    response = TestClient(app).post("/api/v1/funds/estimation", json={"symbol": "000001"})
+    response = TestClient(app).post(
+        "/api/v1/funds/estimation", json={"symbol": "000001"}
+    )
 
     assert response.status_code == 200
     assert response.json()["code"] == 200
@@ -423,7 +443,9 @@ def test_post_fund_value_returns_estimation_source(monkeypatch):
         akshare_client,
         "get_fund_estimations",
         lambda category="全部": (_ for _ in ()).throw(
-            AssertionError("full estimation list should not be loaded for single fund value")
+            AssertionError(
+                "full estimation list should not be loaded for single fund value"
+            )
         ),
     )
 
@@ -614,7 +636,9 @@ def test_list_fund_rank_filters_by_keyword_and_category(monkeypatch):
     }
 
 
-def test_get_fund_profile_returns_aggregated_sections_when_child_query_fails(monkeypatch):
+def test_get_fund_profile_returns_aggregated_sections_when_child_query_fails(
+    monkeypatch,
+):
     class FundDetailData:
         def fillna(self, value):
             return self
@@ -650,14 +674,22 @@ def test_get_fund_profile_returns_aggregated_sections_when_child_query_fails(mon
             ]
             yield from enumerate(rows)
 
-    monkeypatch.setattr(akshare_client, "get_fund_detail", lambda symbol: FundDetailData())
-    monkeypatch.setattr(akshare_client, "get_fund_fee", lambda symbol, indicator: FeeData())
-    monkeypatch.setattr(akshare_client, "get_fund_portfolio_hold", lambda symbol, year: HoldingData())
+    monkeypatch.setattr(
+        akshare_client, "get_fund_detail", lambda symbol: FundDetailData()
+    )
+    monkeypatch.setattr(
+        akshare_client, "get_fund_fee", lambda symbol, indicator: FeeData()
+    )
+    monkeypatch.setattr(
+        akshare_client, "get_fund_portfolio_hold", lambda symbol, year: HoldingData()
+    )
 
     def raise_industry_error(symbol, year):
         raise RuntimeError("industry source down")
 
-    monkeypatch.setattr(akshare_client, "get_fund_industry_allocation", raise_industry_error)
+    monkeypatch.setattr(
+        akshare_client, "get_fund_industry_allocation", raise_industry_error
+    )
 
     response = TestClient(app).post(
         "/api/v1/funds/profile",

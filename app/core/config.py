@@ -18,7 +18,6 @@ class Settings(BaseModel):
     llm_timeout_seconds: int = 60
 
 
-
 @lru_cache
 def get_settings() -> Settings:
     return Settings(
@@ -28,7 +27,9 @@ def get_settings() -> Settings:
         ),
         jwt_secret_key=os.getenv("JWT_SECRET_KEY", "surface-development-secret"),
         jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
-        jwt_access_token_expire_minutes=int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "1440")),
+        jwt_access_token_expire_minutes=int(
+            os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "1440")
+        ),
         llm_api_key=os.getenv("LLM_API_KEY", ""),
         llm_base_url=os.getenv("LLM_BASE_URL", "https://api.deepseek.com"),
         llm_model=os.getenv("LLM_MODEL", "deepseek-chat"),
@@ -37,4 +38,9 @@ def get_settings() -> Settings:
 
 
 def is_user_registration_enabled() -> bool:
-    return os.getenv("USER_REGISTRATION_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
+    return os.getenv("USER_REGISTRATION_ENABLED", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }

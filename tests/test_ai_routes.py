@@ -1,60 +1,23 @@
 from fastapi.testclient import TestClient
+import anyio
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy import select
 
-from app.api import dependencies
 from app.core.current_user import CurrentUser
 from app.core.exception import NotFoundError
-from app.db import session as db_session
-from app.db.base import Base
-from app.modules.ai.report_model import AiFundReport
-from app.db.uow import SqlAlchemyUnitOfWork
+from app.modules.ai.models import AiFundReport
 from app.main import app
 from app.modules.ai import service as ai_fund_service
+from tests.db_helpers import make_test_client
 
 
 def make_client() -> TestClient:
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(bind=engine)
-
-    def override_db():
-        db = TestingSessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app.dependency_overrides[db_session.get_db] = override_db
-    app.dependency_overrides[dependencies.get_uow_factory] = lambda: lambda: SqlAlchemyUnitOfWork(TestingSessionLocal)
-    return TestClient(app)
+    client, _ = make_test_client()
+    return client
 
 
 def make_client_with_session():
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(bind=engine)
-
-    def override_db():
-        db = TestingSessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app.dependency_overrides[db_session.get_db] = override_db
-    app.dependency_overrides[dependencies.get_uow_factory] = lambda: lambda: SqlAlchemyUnitOfWork(TestingSessionLocal)
-    return TestClient(app), TestingSessionLocal
+    return make_test_client()
 
 
 def clear_overrides() -> None:
@@ -81,30 +44,33 @@ def register_and_login(client: TestClient) -> str:
     return login_response.json()["data"]["access_token"]
 
 
-def test_ai_report_service_returns_not_found_for_other_user():
+@pytest.mark.asyncio
+async def test_ai_report_service_returns_not_found_for_other_user():
     from app.modules.ai.report_service import AiFundReportService
 
     class FakeReports:
-        def get_by_id_for_user(self, report_id, user_id):
+        async def get_by_id_for_user(self, report_id, user_id):
             return None
 
     class FakeUow:
         ai_fund_reports = FakeReports()
 
-        def __enter__(self):
+        async def __aenter__(self):
             return self
 
-        def __exit__(self, exc_type, exc_value, traceback):
+        async def __aexit__(self, exc_type, exc_value, traceback):
             pass
 
     service = AiFundReportService(lambda: FakeUow())
 
     with pytest.raises(NotFoundError, match="report not found"):
-        service.get_report_detail(CurrentUser(id=2, username="guest"), 1)
+        await service.get_report_detail(CurrentUser(id=2, username="guest"), 1)
 
 
 def test_stream_fund_summary_requires_token():
-    response = TestClient(app).post("/api/v1/ai/funds/summary/stream", json={"fund_code": "110010"})
+    response = TestClient(app).post(
+        "/api/v1/ai/funds/summary/stream", json={"fund_code": "110010"}
+    )
 
     assert response.status_code == 401
 
@@ -117,7 +83,9 @@ def test_stream_fund_summary_returns_sse(monkeypatch):
         yield "第一段"
         yield "第二段"
 
-    monkeypatch.setattr(ai_fund_service, "stream_fund_summary", fake_stream_fund_summary)
+    monkeypatch.setattr(
+        ai_fund_service, "stream_fund_summary", fake_stream_fund_summary
+    )
 
     client = make_client()
     try:
@@ -147,7 +115,9 @@ def test_stream_fund_summary_saves_completed_report(monkeypatch):
         yield "# 当日操作建议\n"
         yield "动作结论：观望"
 
-    monkeypatch.setattr(ai_fund_service, "stream_fund_summary", fake_stream_fund_summary)
+    monkeypatch.setattr(
+        ai_fund_service, "stream_fund_summary", fake_stream_fund_summary
+    )
 
     client, TestingSessionLocal = make_client_with_session()
     try:
@@ -163,16 +133,16 @@ def test_stream_fund_summary_saves_completed_report(monkeypatch):
         assert response.status_code == 200
         assert "event: done\ndata: [DONE]\n\n" in body
 
-        db = TestingSessionLocal()
-        try:
-            reports = db.query(AiFundReport).all()
+        async def assert_report_saved():
+            async with TestingSessionLocal() as db:
+                reports = list((await db.scalars(select(AiFundReport))).all())
             assert len(reports) == 1
             assert reports[0].user_id == 1
             assert reports[0].fund_code == "110010"
             assert reports[0].content == "# 当日操作建议\n动作结论：观望"
             assert reports[0].created_at is not None
-        finally:
-            db.close()
+
+        anyio.run(assert_report_saved)
     finally:
         clear_overrides()
 
@@ -199,19 +169,21 @@ def test_list_and_get_fund_reports_are_scoped_to_current_user(monkeypatch):
         assert guest_login_response.status_code == 200
         guest_token = guest_login_response.json()["data"]["access_token"]
 
-        db = TestingSessionLocal()
-        try:
-            from app.modules.ai.report_model import AiFundReport
+        async def seed_reports():
+            async with TestingSessionLocal() as db:
+                db.add_all(
+                    [
+                        AiFundReport(
+                            user_id=1, fund_code="110010", content="# admin report"
+                        ),
+                        AiFundReport(
+                            user_id=2, fund_code="000001", content="# guest report"
+                        ),
+                    ]
+                )
+                await db.commit()
 
-            db.add_all(
-                [
-                    AiFundReport(user_id=1, fund_code="110010", content="# admin report"),
-                    AiFundReport(user_id=2, fund_code="000001", content="# guest report"),
-                ]
-            )
-            db.commit()
-        finally:
-            db.close()
+        anyio.run(seed_reports)
 
         list_response = client.post(
             "/api/v1/ai/funds/reports/list",

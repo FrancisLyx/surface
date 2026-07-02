@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta
+from typing import TypedDict
 
-from app.modules.fund.schema import (
+from app.modules.fund.schemas import (
     FundDetailItem,
     FundDetailResponse,
     FundEstimationItem,
@@ -13,12 +14,20 @@ from app.modules.fund.schema import (
     FundValueRequest,
     FundValueResponse,
 )
-from app.clients import akshare_client
+from app.infrastructure.clients import akshare_client
 from app.core.exception import BadGatewayError, NotFoundError, ValidationError
 from app.core.pagination import PageResponse, paginate
 
 
-def list_funds(keyword: str | None = None, page: int = 1, page_size: int = 20) -> PageResponse[FundItem]:
+class NavTrendPoint(TypedDict):
+    date: date
+    unit_nav: float
+    raw: dict[str, str]
+
+
+def list_funds(
+    keyword: str | None = None, page: int = 1, page_size: int = 20
+) -> PageResponse[FundItem]:
     try:
         fund_df = akshare_client.get_fund_names()
     except Exception as exc:
@@ -117,7 +126,7 @@ def get_fund_value(request: FundValueRequest) -> FundValueResponse:
                 source="estimation",
                 estimation=estimation,
                 latest_nav=None,
-        )
+            )
         if request.source == "estimation":
             raise NotFoundError(f"Fund estimation not found: {fund_code}")
 
@@ -187,7 +196,7 @@ def get_fund_nav_trend_summary(symbol: str) -> dict[str, object]:
             "latest_points": [],
         }
 
-    points: list[dict[str, str]] = []
+    points: list[NavTrendPoint] = []
     for _, row in nav_trend_df.iterrows():
         nav_date = _parse_date_value(row.get("净值日期", row.get("日期", "")))
         unit_nav = _parse_float(row.get("单位净值", row.get("净值", "")))
@@ -347,7 +356,9 @@ def _build_fund_estimation_item(
         published_date=published_date,
         published_nav=published_nav,
         published_growth_rate=published_growth_rate,
-        estimate_deviation=estimate_deviation if estimate_date == published_date else "",
+        estimate_deviation=estimate_deviation
+        if estimate_date == published_date
+        else "",
         previous_nav_date=_extract_date(previous_nav_column),
         previous_nav=str(row.get(previous_nav_column, "")),
     )
@@ -367,12 +378,12 @@ def _load_latest_nav_index() -> dict[str, FundLatestNavItem]:
     return latest_nav_by_code
 
 
-
-
 def _build_fund_latest_nav_item(row, columns) -> FundLatestNavItem:
     unit_nav_column = _find_latest_nav_column(row, columns, "单位净值")
     unit_nav_date = _extract_date(unit_nav_column)
-    accumulated_nav_column = _find_nav_column_by_date(columns, "累计净值", unit_nav_date)
+    accumulated_nav_column = _find_nav_column_by_date(
+        columns, "累计净值", unit_nav_date
+    )
 
     return FundLatestNavItem(
         code=str(row.get("基金代码", "")),
@@ -410,7 +421,9 @@ def _build_fund_rank_item(row) -> FundRankItem:
 def _load_profile_fee_sections(symbol: str) -> list[FundFeeSection]:
     sections: list[FundFeeSection] = []
     for indicator in ["申购费率（前端）", "赎回费率", "运作费用"]:
-        rows = _load_profile_rows(lambda indicator=indicator: akshare_client.get_fund_fee(symbol, indicator))
+        rows = _load_profile_rows(
+            lambda indicator=indicator: akshare_client.get_fund_fee(symbol, indicator)
+        )
         sections.append(FundFeeSection(title=indicator, rows=rows))
     return sections
 
@@ -491,7 +504,11 @@ def _find_latest_nav_column(row, columns, include: str) -> str:
 def _find_nav_column_by_date(columns, include: str, value_date: str) -> str:
     for column in columns:
         column_name = str(column)
-        if include in column_name and value_date and _extract_date(column_name) == value_date:
+        if (
+            include in column_name
+            and value_date
+            and _extract_date(column_name) == value_date
+        ):
             return column_name
     return _find_column(columns, include)
 

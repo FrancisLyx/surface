@@ -1,23 +1,25 @@
 from sqlalchemy import and_, delete, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.fund.favorite_model import UserFavoriteFund
+from app.modules.fund.models import UserFavoriteFund
 
 
 class FundFavoriteRepository:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    def get_by_user_and_code(self, user_id: int, fund_code: str) -> UserFavoriteFund | None:
-        return self._session.scalar(
+    async def get_by_user_and_code(
+        self, user_id: int, fund_code: str
+    ) -> UserFavoriteFund | None:
+        return await self._session.scalar(
             select(UserFavoriteFund).where(
                 UserFavoriteFund.user_id == user_id,
                 UserFavoriteFund.fund_code == fund_code,
             )
         )
 
-    def exists_for_user(self, user_id: int, fund_code: str) -> bool:
-        favorite_id = self._session.scalar(
+    async def exists_for_user(self, user_id: int, fund_code: str) -> bool:
+        favorite_id = await self._session.scalar(
             select(UserFavoriteFund.id).where(
                 UserFavoriteFund.user_id == user_id,
                 UserFavoriteFund.fund_code == fund_code,
@@ -25,49 +27,55 @@ class FundFavoriteRepository:
         )
         return favorite_id is not None
 
-    def count_for_user(self, user_id: int, keyword: str | None = None) -> int:
-        return self._session.scalar(select(func.count()).select_from(UserFavoriteFund).where(self._where_clause(user_id, keyword))) or 0
+    async def count_for_user(self, user_id: int, keyword: str | None = None) -> int:
+        return (
+            await self._session.scalar(
+                select(func.count())
+                .select_from(UserFavoriteFund)
+                .where(self._where_clause(user_id, keyword))
+            )
+            or 0
+        )
 
-    def list_for_user(
+    async def list_for_user(
         self,
         user_id: int,
         keyword: str | None = None,
         offset: int = 0,
         limit: int = 20,
     ) -> list[UserFavoriteFund]:
-        return list(
-            self._session.scalars(
-                select(UserFavoriteFund)
-                .where(self._where_clause(user_id, keyword))
-                .order_by(UserFavoriteFund.created_at.desc(), UserFavoriteFund.id.desc())
-                .offset(offset)
-                .limit(limit)
-            ).all()
+        result = await self._session.scalars(
+            select(UserFavoriteFund)
+            .where(self._where_clause(user_id, keyword))
+            .order_by(UserFavoriteFund.created_at.desc(), UserFavoriteFund.id.desc())
+            .offset(offset)
+            .limit(limit)
         )
+        return list(result.all())
 
-    def list_options_for_user(self, user_id: int) -> list[UserFavoriteFund]:
-        return list(
-            self._session.scalars(
-                select(UserFavoriteFund)
-                .where(UserFavoriteFund.user_id == user_id)
-                .order_by(UserFavoriteFund.created_at.desc(), UserFavoriteFund.id.desc())
-            ).all()
+    async def list_options_for_user(self, user_id: int) -> list[UserFavoriteFund]:
+        result = await self._session.scalars(
+            select(UserFavoriteFund)
+            .where(UserFavoriteFund.user_id == user_id)
+            .order_by(UserFavoriteFund.created_at.desc(), UserFavoriteFund.id.desc())
         )
+        return list(result.all())
 
     def add(self, favorite: UserFavoriteFund) -> None:
         self._session.add(favorite)
 
-    def refresh(self, favorite: UserFavoriteFund) -> None:
-        self._session.refresh(favorite)
+    async def refresh(self, favorite: UserFavoriteFund) -> None:
+        await self._session.refresh(favorite)
 
-    def remove_for_user(self, user_id: int, fund_code: str) -> int:
-        result = self._session.execute(
+    async def remove_for_user(self, user_id: int, fund_code: str) -> int:
+        result = await self._session.execute(
             delete(UserFavoriteFund).where(
                 UserFavoriteFund.user_id == user_id,
                 UserFavoriteFund.fund_code == fund_code,
             )
         )
-        return result.rowcount or 0
+        rowcount = getattr(result, "rowcount", 0)
+        return int(rowcount or 0)
 
     def _where_clause(self, user_id: int, keyword: str | None):
         filters = [UserFavoriteFund.user_id == user_id]

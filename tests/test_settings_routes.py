@@ -1,34 +1,12 @@
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from app.api import dependencies
-from app.db import session as db_session
-from app.db.base import Base
-from app.db.uow import SqlAlchemyUnitOfWork
 from app.main import app
+from tests.db_helpers import make_test_client
 
 
 def make_client() -> TestClient:
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(bind=engine)
-
-    def override_db():
-        db = TestingSessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app.dependency_overrides[db_session.get_db] = override_db
-    app.dependency_overrides[dependencies.get_uow_factory] = lambda: lambda: SqlAlchemyUnitOfWork(TestingSessionLocal)
-    return TestClient(app)
+    client, _ = make_test_client()
+    return client
 
 
 def clear_overrides() -> None:
@@ -93,7 +71,9 @@ def test_update_registration_setting_controls_register_flow(monkeypatch):
             },
         )
         assert disabled_register_response.status_code == 403
-        assert disabled_register_response.json()["message"] == "registration is disabled"
+        assert (
+            disabled_register_response.json()["message"] == "registration is disabled"
+        )
 
         open_response = client.post(
             "/api/v1/settings/registration",

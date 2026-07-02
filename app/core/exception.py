@@ -9,12 +9,15 @@ from app.core.response import error_response
 logger = logging.getLogger("app.exception")
 
 
-class ApplicationError(Exception):
+class DomainError(Exception):
     status_code = 400
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message
+
+
+ApplicationError = DomainError
 
 
 class ValidationError(ApplicationError):
@@ -43,20 +46,30 @@ class BadGatewayError(ApplicationError):
 
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApplicationError)
-    async def application_exception_handler(request: Request, exc: ApplicationError) -> JSONResponse:
+    async def application_exception_handler(
+        request: Request, exc: ApplicationError
+    ) -> JSONResponse:
         return _error_response(request, exc.status_code, exc.message)
 
     @app.exception_handler(HTTPException)
-    async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    async def http_exception_handler(
+        request: Request, exc: HTTPException
+    ) -> JSONResponse:
         return _error_response(request, exc.status_code, str(exc.detail))
 
     @app.exception_handler(RequestValidationError)
-    async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    async def validation_exception_handler(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
         return _error_response(request, 422, "Request validation failed")
 
     @app.exception_handler(Exception)
-    async def unexpected_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        logger.exception("Unhandled exception request_id=%s", _get_request_id(request), exc_info=exc)
+    async def unexpected_exception_handler(
+        request: Request, exc: Exception
+    ) -> JSONResponse:
+        logger.exception(
+            "Unhandled exception request_id=%s", _get_request_id(request), exc_info=exc
+        )
         return _error_response(request, 500, "Internal server error")
 
 

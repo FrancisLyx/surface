@@ -7,10 +7,11 @@ ENV UV_LINK_MODE=copy
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock README.md alembic.ini ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY app ./app
+COPY alembic ./alembic
 RUN uv sync --frozen --no-dev
 
 EXPOSE 8000

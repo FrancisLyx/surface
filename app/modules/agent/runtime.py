@@ -1,18 +1,23 @@
 from typing import Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.fund_analysis_graph import (
+from app.core.current_user import CurrentUser
+from app.modules.agent.dtos import AgentDefinitionDTO
+from app.modules.agent.graphs.fund_analysis import (
     stream_aggressive_ajia_analysis,
     stream_agent_chat_response,
     stream_favorite_fund_scan,
     stream_fund_deep_analysis,
 )
-from app.modules.agent.model import AgentDefinition
-from app.modules.user.model import User
 
 
-def stream_agent(agent: AgentDefinition, payload: dict[str, Any], user: User, db: Session):
+def stream_agent(
+    agent: AgentDefinitionDTO,
+    payload: dict[str, Any],
+    user: CurrentUser,
+    db: AsyncSession | None,
+):
     if agent.graph_code == "fund_deep_analysis_graph":
         yield from stream_fund_deep_analysis(payload, user, db)
         return
@@ -28,9 +33,19 @@ def stream_agent(agent: AgentDefinition, payload: dict[str, Any], user: User, db
     raise ValueError(f"unsupported graph: {agent.graph_code}")
 
 
-def stream_agent_chat(agent: AgentDefinition, payload: dict[str, Any], history: list[dict[str, str]], user: User, db: Session):
+def stream_agent_chat(
+    agent: AgentDefinitionDTO,
+    payload: dict[str, Any],
+    history: list[dict[str, str]],
+    user: CurrentUser,
+    db: AsyncSession | None,
+):
     if agent.graph_code in {"fund_deep_analysis_graph", "aggressive_ajia_graph"}:
-        persona = "aggressive_ajia" if agent.graph_code == "aggressive_ajia_graph" else "professional"
+        persona = (
+            "aggressive_ajia"
+            if agent.graph_code == "aggressive_ajia_graph"
+            else "professional"
+        )
         yield from stream_agent_chat_response(payload, history, persona=persona)
         return
 

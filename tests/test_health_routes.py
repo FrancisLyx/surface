@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
-from app.db import session as db_session
+from app.core.readiness import ReadinessState
+from app.infrastructure.database import session as db_session
 from app.main import app
 
 
@@ -28,13 +29,13 @@ def test_readiness_reports_database_ok():
             return 1
 
     class FakeSession:
-        def execute(self, statement):
+        async def execute(self, statement):
             return FakeScalarResult()
 
-        def close(self):
+        async def close(self):
             pass
 
-    def fake_get_db():
+    async def fake_get_db():
         yield FakeSession()
 
     app.dependency_overrides[db_session.get_db] = fake_get_db
@@ -49,6 +50,7 @@ def test_readiness_reports_database_ok():
         "status": "ok",
         "database": "ok",
     }
+    assert app.state.readiness.snapshot()["dependencies"]["database"]["status"] == "ok"
 
 
 def test_health_alias_reports_readiness():
@@ -57,13 +59,13 @@ def test_health_alias_reports_readiness():
             return 1
 
     class FakeSession:
-        def execute(self, statement):
+        async def execute(self, statement):
             return FakeScalarResult()
 
-        def close(self):
+        async def close(self):
             pass
 
-    def fake_get_db():
+    async def fake_get_db():
         yield FakeSession()
 
     app.dependency_overrides[db_session.get_db] = fake_get_db
@@ -99,4 +101,20 @@ def test_app_lifespan_sets_startup_complete_state():
     assert response.json()["data"] == {
         "status": "ok",
         "startup_complete": True,
+    }
+
+
+def test_readiness_state_tracks_dependency_failures():
+    state = ReadinessState()
+    state.mark_ok("database")
+    assert state.is_ready() is True
+
+    state.mark_failed("database", "connection refused")
+
+    snapshot = state.snapshot()
+    assert state.is_ready() is False
+    assert snapshot["status"] == "degraded"
+    assert snapshot["dependencies"]["database"] == {
+        "status": "failed",
+        "message": "connection refused",
     }

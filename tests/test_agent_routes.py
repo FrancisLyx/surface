@@ -1,45 +1,32 @@
 from fastapi.testclient import TestClient
-from app.modules.agent.event import message_event
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+import anyio
+from app.modules.agent.events import message_event
+from sqlalchemy import select
 
-from app.api import dependencies
-from app.db import session as db_session
-from app.db.base import Base
-from app.modules.agent.model import AgentConversation, AgentDefinition, AgentMessage, AgentReport, AgentRun
-from app.db.uow import SqlAlchemyUnitOfWork
+from app.modules.agent.models import (
+    AgentConversation,
+    AgentDefinition,
+    AgentMessage,
+    AgentReport,
+    AgentRun,
+)
 from app.main import app
 from app.modules.agent import runtime as agent_runtime_service
 from app.modules.agent import service as agent_service
+from tests.db_helpers import make_test_client
 
 
 def make_client_with_session():
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(bind=engine)
-
-    def override_db():
-        db = TestingSessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app.dependency_overrides[db_session.get_db] = override_db
-    app.dependency_overrides[dependencies.get_uow_factory] = lambda: lambda: SqlAlchemyUnitOfWork(TestingSessionLocal)
-    return TestClient(app), TestingSessionLocal
+    return make_test_client()
 
 
 def clear_overrides() -> None:
     app.dependency_overrides.clear()
 
 
-def register_and_login(client: TestClient, username: str = "admin", email: str = "admin@example.com") -> str:
+def register_and_login(
+    client: TestClient, username: str = "admin", email: str = "admin@example.com"
+) -> str:
     register_response = client.post(
         "/api/v1/user/register",
         json={
@@ -85,13 +72,17 @@ def test_list_agents_returns_enabled_builtin_agents(monkeypatch):
 def test_stream_agent_chat_saves_conversation_and_messages(monkeypatch):
     monkeypatch.setenv("USER_REGISTRATION_ENABLED", "true")
 
-    def fake_stream_agent_chat(agent: AgentDefinition, payload: dict, history: list[dict], user, db):
+    def fake_stream_agent_chat(
+        agent: AgentDefinition, payload: dict, history: list[dict], user, db
+    ):
         assert agent.code == "fund_deep_analysis"
         assert payload == {"message": "今天怎么看？", "fund_code": "110010"}
         assert history == []
         yield message_event("可以先观望")
 
-    monkeypatch.setattr(agent_runtime_service, "stream_agent_chat", fake_stream_agent_chat)
+    monkeypatch.setattr(
+        agent_runtime_service, "stream_agent_chat", fake_stream_agent_chat
+    )
 
     client, TestingSessionLocal = make_client_with_session()
     try:
@@ -105,8 +96,14 @@ def test_stream_agent_chat_saves_conversation_and_messages(monkeypatch):
             body = response.read().decode("utf-8")
 
         assert response.status_code == 200
-        assert 'event: conversation\ndata: {"type":"conversation","conversation_id":1}\n\n' in body
-        assert 'event: message\ndata: {"type":"assistant_delta","content":"可以先观望"}\n\n' in body
+        assert (
+            'event: conversation\ndata: {"type":"conversation","conversation_id":1}\n\n'
+            in body
+        )
+        assert (
+            'event: message\ndata: {"type":"assistant_delta","content":"可以先观望"}\n\n'
+            in body
+        )
 
         list_response = client.post(
             "/api/v1/agents/conversations/list",
@@ -128,13 +125,24 @@ def test_stream_agent_chat_saves_conversation_and_messages(monkeypatch):
         detail = detail_response.json()["data"]
         assert detail["id"] == 1
         assert [item["role"] for item in detail["messages"]] == ["user", "assistant"]
-        assert [item["content"] for item in detail["messages"]] == ["今天怎么看？", "可以先观望"]
+        assert [item["content"] for item in detail["messages"]] == [
+            "今天怎么看？",
+            "可以先观望",
+        ]
 
-        db = TestingSessionLocal()
-        try:
-            conversations = db.query(AgentConversation).all()
-            messages = db.query(AgentMessage).order_by(AgentMessage.id.asc()).all()
-            runs = db.query(AgentRun).all()
+        async def assert_conversation_saved():
+            async with TestingSessionLocal() as db:
+                conversations = list(
+                    (await db.scalars(select(AgentConversation))).all()
+                )
+                messages = list(
+                    (
+                        await db.scalars(
+                            select(AgentMessage).order_by(AgentMessage.id.asc())
+                        )
+                    ).all()
+                )
+                runs = list((await db.scalars(select(AgentRun))).all())
             assert len(conversations) == 1
             assert conversations[0].target_code == "110010"
             assert [item.role for item in messages] == ["user", "assistant"]
@@ -143,8 +151,8 @@ def test_stream_agent_chat_saves_conversation_and_messages(monkeypatch):
             assert len(runs) == 1
             assert runs[0].conversation_id == conversations[0].id
             assert runs[0].output_text == "可以先观望"
-        finally:
-            db.close()
+
+        anyio.run(assert_conversation_saved)
     finally:
         clear_overrides()
 
@@ -152,11 +160,15 @@ def test_stream_agent_chat_saves_conversation_and_messages(monkeypatch):
 def test_stream_agent_chat_runtime_does_not_receive_live_db_session(monkeypatch):
     monkeypatch.setenv("USER_REGISTRATION_ENABLED", "true")
 
-    def fake_stream_agent_chat(agent: AgentDefinition, payload: dict, history: list[dict], user, db):
+    def fake_stream_agent_chat(
+        agent: AgentDefinition, payload: dict, history: list[dict], user, db
+    ):
         assert db is None
         yield message_event("可以先观望")
 
-    monkeypatch.setattr(agent_runtime_service, "stream_agent_chat", fake_stream_agent_chat)
+    monkeypatch.setattr(
+        agent_runtime_service, "stream_agent_chat", fake_stream_agent_chat
+    )
 
     client, _ = make_client_with_session()
     try:
@@ -180,36 +192,43 @@ def test_agent_reports_are_scoped_to_current_user(monkeypatch):
     client, TestingSessionLocal = make_client_with_session()
     try:
         admin_token = register_and_login(client)
-        guest_token = register_and_login(client, username="guest", email="guest@example.com")
+        guest_token = register_and_login(
+            client, username="guest", email="guest@example.com"
+        )
 
-        db = TestingSessionLocal()
-        try:
-            agent_service.ensure_builtin_agents(db)
-            admin_agent = db.query(AgentDefinition).filter_by(code="fund_deep_analysis").one()
-            admin_agent_id = admin_agent.id
-            run = AgentRun(
-                user_id=1,
-                agent_id=admin_agent.id,
-                input_json={"fund_code": "110010"},
-                output_text="# admin report",
-                status="success",
-            )
-            db.add(run)
-            db.flush()
-            db.add(
-                AgentReport(
+        async def seed_agent_report():
+            async with TestingSessionLocal() as db:
+                await agent_service.ensure_builtin_agents(db)
+                admin_agent = await db.scalar(
+                    select(AgentDefinition).where(
+                        AgentDefinition.code == "fund_deep_analysis"
+                    )
+                )
+                assert admin_agent is not None
+                run = AgentRun(
                     user_id=1,
                     agent_id=admin_agent.id,
-                    run_id=run.id,
-                    title="110010 基金深度分析",
-                    target_type="fund",
-                    target_code="110010",
-                    content="# admin report",
+                    input_json={"fund_code": "110010"},
+                    output_text="# admin report",
+                    status="success",
                 )
-            )
-            db.commit()
-        finally:
-            db.close()
+                db.add(run)
+                await db.flush()
+                db.add(
+                    AgentReport(
+                        user_id=1,
+                        agent_id=admin_agent.id,
+                        run_id=run.id,
+                        title="110010 基金深度分析",
+                        target_type="fund",
+                        target_code="110010",
+                        content="# admin report",
+                    )
+                )
+                await db.commit()
+                return admin_agent.id
+
+        admin_agent_id = anyio.run(seed_agent_report)
 
         list_response = client.post(
             "/api/v1/agents/reports/list",

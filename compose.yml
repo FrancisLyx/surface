@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: surface
+      POSTGRES_USER: surface_user
+      POSTGRES_PASSWORD: surface_password
+    ports:
+      - "${POSTGRES_BIND:-127.0.0.1:5432}:5432"
+    volumes:
+      - surface_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U surface_user -d surface"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env.example
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${SURFACE_API_BIND:-127.0.0.1:8000}:8000"
+    command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+volumes:
+  surface_postgres_data:

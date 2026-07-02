@@ -5,7 +5,7 @@ from jose import jwt
 from passlib.context import CryptContext
 
 from app.core.config import get_settings
-from app.modules.user.model import User
+from app.modules.user.models import User
 
 password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -21,13 +21,17 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 def create_access_token(user: User) -> str:
     settings = get_settings()
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_access_token_expire_minutes)
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        minutes=settings.jwt_access_token_expire_minutes
+    )
     payload = {
         "sub": str(user.id),
         "username": user.username,
         "exp": expires_at,
     }
-    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    return jwt.encode(
+        payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm
+    )
 
 
 def get_current_user(*args, **kwargs):

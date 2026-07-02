@@ -1,36 +1,14 @@
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from app.api import dependencies
-from app.modules.user.schema import UserRegisterRequest
-from app.db import session as db_session
-from app.db.base import Base
-from app.db.uow import SqlAlchemyUnitOfWork
+from app.modules.user.schemas import UserRegisterRequest
 from app.main import app
+from tests.db_helpers import make_test_client
 
 
 def with_test_db():
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(bind=engine)
-
-    def override_db():
-        db = TestingSessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app.dependency_overrides[db_session.get_db] = override_db
-    app.dependency_overrides[dependencies.get_uow_factory] = lambda: lambda: SqlAlchemyUnitOfWork(TestingSessionLocal)
-    return TestClient(app)
+    client, _ = make_test_client()
+    return client
 
 
 def clear_overrides():
@@ -72,7 +50,9 @@ def test_register_login_and_me_flow(monkeypatch):
         token = login_response.json()["data"]["access_token"]
         assert login_response.json()["data"]["token_type"] == "bearer"
 
-        me_response = client.get("/api/v1/user/me", headers={"Authorization": f"Bearer {token}"})
+        me_response = client.get(
+            "/api/v1/user/me", headers={"Authorization": f"Bearer {token}"}
+        )
         assert me_response.status_code == 200
         assert me_response.json()["data"] == {
             "id": 1,
@@ -156,32 +136,32 @@ def test_me_requires_token():
     assert response.status_code == 401
 
 
-def test_user_service_uses_domain_exception_for_duplicate_username(monkeypatch):
+@pytest.mark.asyncio
+async def test_user_service_uses_domain_exception_for_duplicate_username(monkeypatch):
     from app.core.exception import ConflictError
     from app.modules.user.service import UserService
 
     class FakeUsers:
-        def get_by_username(self, username):
+        async def get_by_username(self, username):
             return object()
 
-    class FakeSettings:
-        def is_registration_enabled(self):
+    class FakeRegistrationPolicy:
+        async def is_registration_enabled(self):
             return True
 
     class FakeUow:
         users = FakeUsers()
-        system_settings = FakeSettings()
 
-        def __enter__(self):
+        async def __aenter__(self):
             return self
 
-        def __exit__(self, exc_type, exc_value, traceback):
+        async def __aexit__(self, exc_type, exc_value, traceback):
             pass
 
-    service = UserService(lambda: FakeUow())
+    service = UserService(lambda: FakeUow(), FakeRegistrationPolicy())
 
     with pytest.raises(ConflictError, match="username already exists"):
-        service.register_user(
+        await service.register_user(
             UserRegisterRequest(
                 username="admin",
                 email="admin@example.com",

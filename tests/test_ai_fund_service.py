@@ -1,4 +1,4 @@
-from app.modules.fund.schema import (
+from app.modules.fund.schemas import (
     FundDetailItem,
     FundEstimationItem,
     FundProfileRequest,
@@ -8,6 +8,7 @@ from app.modules.fund.schema import (
 )
 from app.modules.ai import service as ai_fund_service
 from app.modules.fund import service as fund_service
+from app.modules.fund.public import FundQueryFacade
 
 
 def test_summarize_fund_builds_professional_analysis_prompt(monkeypatch):
@@ -76,13 +77,20 @@ def test_summarize_fund_builds_professional_analysis_prompt(monkeypatch):
         captured["prompt"] = prompt
         return "AI analysis"
 
-    monkeypatch.setattr(ai_fund_service.fund_service, "get_fund_value", fake_get_fund_value)
-    monkeypatch.setattr(ai_fund_service.fund_service, "get_fund_profile", fake_get_fund_profile)
     monkeypatch.setattr(
-        ai_fund_service.fund_service,
+        FundQueryFacade,
+        "get_fund_value",
+        lambda self, request: fake_get_fund_value(request),
+    )
+    monkeypatch.setattr(
+        FundQueryFacade,
+        "get_fund_profile",
+        lambda self, request: fake_get_fund_profile(request),
+    )
+    monkeypatch.setattr(
+        FundQueryFacade,
         "get_fund_nav_trend_summary",
-        fake_get_fund_nav_trend_summary,
-        raising=False,
+        lambda self, fund_code: fake_get_fund_nav_trend_summary(fund_code),
     )
     monkeypatch.setattr(ai_fund_service, "chat", fake_chat)
 
@@ -139,4 +147,7 @@ def test_get_fund_nav_trend_summary_calculates_recent_year_metrics(monkeypatch):
     assert summary["end_date"] == "2026-06-30"
     assert summary["period_return"] == "10.00%"
     assert summary["max_drawdown"] == "-25.00%"
-    assert summary["latest_points"][-1] == {"净值日期": "2026-06-30", "单位净值": "1.1000"}
+    assert summary["latest_points"][-1] == {
+        "净值日期": "2026-06-30",
+        "单位净值": "1.1000",
+    }

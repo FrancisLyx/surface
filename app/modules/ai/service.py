@@ -1,9 +1,9 @@
 import json
 from datetime import date
 
-from app.modules.fund.schema import FundProfileRequest, FundValueRequest
-from app.clients.langchain_client import chat, stream_chat
-from app.modules.fund import service as fund_service
+from app.modules.fund.public import FundQueryFacade
+from app.modules.fund.schemas import FundProfileRequest, FundValueRequest
+from app.infrastructure.clients.langchain_client import chat, stream_chat
 
 
 def summarize_fund(fund_code: str) -> str:
@@ -18,18 +18,23 @@ def stream_fund_summary(fund_code: str):
 
 def build_fund_summary_prompt(fund_code: str) -> str:
     normalized_code = fund_code.strip()
-    fund_value = fund_service.get_fund_value(
+    fund_query = FundQueryFacade()
+    fund_value = fund_query.get_fund_value(
         FundValueRequest(fund_code=normalized_code, source="auto"),
     )
-    profile = fund_service.get_fund_profile(
+    profile = fund_query.get_fund_profile(
         FundProfileRequest(symbol=normalized_code, year=str(date.today().year)),
     )
-    nav_trend_summary = fund_service.get_fund_nav_trend_summary(normalized_code)
+    nav_trend_summary = fund_query.get_fund_nav_trend_summary(normalized_code)
 
-    return _build_summary_prompt(normalized_code, fund_value, profile, nav_trend_summary)
+    return _build_summary_prompt(
+        normalized_code, fund_value, profile, nav_trend_summary
+    )
 
 
-def _build_summary_prompt(fund_code: str, fund_value, profile, nav_trend_summary: dict[str, object]) -> str:
+def _build_summary_prompt(
+    fund_code: str, fund_value, profile, nav_trend_summary: dict[str, object]
+) -> str:
     return f"""
 你是一名审慎、专业的基金研究员。请基于给定数据，对基金做中文分析。
 必须只使用输入数据，不要编造基金经理观点、实时新闻、宏观结论或未提供的持仓变化。

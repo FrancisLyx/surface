@@ -1,17 +1,11 @@
 from fastapi.testclient import TestClient
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from app.api import dependencies
-from app.modules.fund.schema import FavoriteFundAddRequest
+from app.modules.fund.schemas import FavoriteFundAddRequest
 from app.core.current_user import CurrentUser
-from app.db import session as db_session
-from app.db.base import Base
-from app.db.uow import SqlAlchemyUnitOfWork
 from app.main import app
-from app.clients import akshare_client
+from app.infrastructure.clients import akshare_client
+from tests.db_helpers import make_test_client
 
 
 class EmptyDailyNavData:
@@ -27,31 +21,16 @@ class EmptyDailyNavData:
 
 
 def make_client() -> TestClient:
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(bind=engine)
-
-    def override_db():
-        db = TestingSessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app.dependency_overrides[db_session.get_db] = override_db
-    app.dependency_overrides[dependencies.get_uow_factory] = lambda: lambda: SqlAlchemyUnitOfWork(TestingSessionLocal)
-    return TestClient(app)
+    client, _ = make_test_client()
+    return client
 
 
 def clear_overrides() -> None:
     app.dependency_overrides.clear()
 
 
-def test_favorite_service_accepts_current_user_context():
+@pytest.mark.asyncio
+async def test_favorite_service_accepts_current_user_context():
     from app.modules.fund.favorite_service import FundFavoriteService
 
     class FakeFavorite:
@@ -62,7 +41,9 @@ def test_favorite_service_accepts_current_user_context():
         fund_type = None
         created_at = None
 
-        def __init__(self, user_id: int, fund_code: str, fund_name: str, fund_type: str | None):
+        def __init__(
+            self, user_id: int, fund_code: str, fund_name: str, fund_type: str | None
+        ):
             self.user_id = user_id
             self.fund_code = fund_code
             self.fund_name = fund_name
@@ -72,13 +53,13 @@ def test_favorite_service_accepts_current_user_context():
         def __init__(self):
             self.added_user_id = None
 
-        def get_by_user_and_code(self, user_id, fund_code):
+        async def get_by_user_and_code(self, user_id, fund_code):
             return None
 
         def add(self, favorite):
             self.added_user_id = favorite.user_id
 
-        def refresh(self, favorite):
+        async def refresh(self, favorite):
             from datetime import datetime
 
             favorite.id = 10
@@ -89,20 +70,22 @@ def test_favorite_service_accepts_current_user_context():
             self.fund_favorites = FakeFavorites()
             self.committed = False
 
-        def __enter__(self):
+        async def __aenter__(self):
             return self
 
-        def __exit__(self, exc_type, exc_value, traceback):
+        async def __aexit__(self, exc_type, exc_value, traceback):
             pass
 
-        def commit(self):
+        async def commit(self):
             self.committed = True
 
     uow = FakeUow()
     service = FundFavoriteService(lambda: uow, favorite_model=FakeFavorite)
-    result = service.add_favorite_fund(
+    result = await service.add_favorite_fund(
         CurrentUser(id=7, username="admin"),
-        FavoriteFundAddRequest(fund_code="000001", fund_name="华夏成长混合", fund_type="混合型"),
+        FavoriteFundAddRequest(
+            fund_code="000001", fund_name="华夏成长混合", fund_type="混合型"
+        ),
     )
 
     assert uow.fund_favorites.added_user_id == 7
@@ -110,7 +93,9 @@ def test_favorite_service_accepts_current_user_context():
     assert result.fund_code == "000001"
 
 
-def register_and_login(client: TestClient, username: str, email: str, phone: str) -> str:
+def register_and_login(
+    client: TestClient, username: str, email: str, phone: str
+) -> str:
     register_response = client.post(
         "/api/v1/user/register",
         json={
@@ -142,7 +127,11 @@ def test_add_list_and_remove_favorite_fund(monkeypatch):
 
         add_response = client.post(
             "/api/v1/funds/favorites/add",
-            json={"fund_code": "000001", "fund_name": "华夏成长混合", "fund_type": "混合型-灵活"},
+            json={
+                "fund_code": "000001",
+                "fund_name": "华夏成长混合",
+                "fund_type": "混合型-灵活",
+            },
             headers=auth_headers(token),
         )
 
@@ -152,7 +141,11 @@ def test_add_list_and_remove_favorite_fund(monkeypatch):
 
         duplicate_response = client.post(
             "/api/v1/funds/favorites/add",
-            json={"fund_code": "000001", "fund_name": "华夏成长混合", "fund_type": "混合型-灵活"},
+            json={
+                "fund_code": "000001",
+                "fund_name": "华夏成长混合",
+                "fund_type": "混合型-灵活",
+            },
             headers=auth_headers(token),
         )
 
@@ -203,12 +196,20 @@ def test_favorite_funds_are_scoped_to_current_user(monkeypatch):
     monkeypatch.setenv("USER_REGISTRATION_ENABLED", "true")
     client = make_client()
     try:
-        admin_token = register_and_login(client, "admin", "admin@example.com", "13800138000")
-        guest_token = register_and_login(client, "guest", "guest@example.com", "13900139000")
+        admin_token = register_and_login(
+            client, "admin", "admin@example.com", "13800138000"
+        )
+        guest_token = register_and_login(
+            client, "guest", "guest@example.com", "13900139000"
+        )
 
         client.post(
             "/api/v1/funds/favorites/add",
-            json={"fund_code": "000001", "fund_name": "华夏成长混合", "fund_type": "混合型-灵活"},
+            json={
+                "fund_code": "000001",
+                "fund_name": "华夏成长混合",
+                "fund_type": "混合型-灵活",
+            },
             headers=auth_headers(admin_token),
         )
 
@@ -228,22 +229,38 @@ def test_list_favorite_fund_options_are_scoped_to_current_user(monkeypatch):
     monkeypatch.setenv("USER_REGISTRATION_ENABLED", "true")
     client = make_client()
     try:
-        admin_token = register_and_login(client, "admin", "admin@example.com", "13800138000")
-        guest_token = register_and_login(client, "guest", "guest@example.com", "13900139000")
+        admin_token = register_and_login(
+            client, "admin", "admin@example.com", "13800138000"
+        )
+        guest_token = register_and_login(
+            client, "guest", "guest@example.com", "13900139000"
+        )
 
         client.post(
             "/api/v1/funds/favorites/add",
-            json={"fund_code": "000001", "fund_name": "华夏成长混合", "fund_type": "混合型-灵活"},
+            json={
+                "fund_code": "000001",
+                "fund_name": "华夏成长混合",
+                "fund_type": "混合型-灵活",
+            },
             headers=auth_headers(admin_token),
         )
         client.post(
             "/api/v1/funds/favorites/add",
-            json={"fund_code": "000002", "fund_name": "嘉实增长混合", "fund_type": "混合型-偏股"},
+            json={
+                "fund_code": "000002",
+                "fund_name": "嘉实增长混合",
+                "fund_type": "混合型-偏股",
+            },
             headers=auth_headers(admin_token),
         )
         client.post(
             "/api/v1/funds/favorites/add",
-            json={"fund_code": "000003", "fund_name": "中海可转债债券A", "fund_type": "债券型"},
+            json={
+                "fund_code": "000003",
+                "fund_name": "中海可转债债券A",
+                "fund_type": "债券型",
+            },
             headers=auth_headers(guest_token),
         )
 
@@ -290,7 +307,9 @@ def test_list_favorite_fund_estimations(monkeypatch):
         akshare_client,
         "get_fund_estimations",
         lambda category="全部": (_ for _ in ()).throw(
-            AssertionError("full estimation list should not be loaded for favorite estimations")
+            AssertionError(
+                "full estimation list should not be loaded for favorite estimations"
+            )
         ),
     )
 
@@ -299,7 +318,11 @@ def test_list_favorite_fund_estimations(monkeypatch):
         token = register_and_login(client, "admin", "admin@example.com", "13800138000")
         client.post(
             "/api/v1/funds/favorites/add",
-            json={"fund_code": "000001", "fund_name": "华夏成长混合", "fund_type": "混合型-灵活"},
+            json={
+                "fund_code": "000001",
+                "fund_name": "华夏成长混合",
+                "fund_type": "混合型-灵活",
+            },
             headers=auth_headers(token),
         )
 
@@ -366,7 +389,9 @@ def test_get_favorite_fund_report(monkeypatch):
         akshare_client,
         "get_fund_estimations",
         lambda category="全部": (_ for _ in ()).throw(
-            AssertionError("full estimation list should not be loaded for favorite report")
+            AssertionError(
+                "full estimation list should not be loaded for favorite report"
+            )
         ),
     )
 
@@ -375,12 +400,20 @@ def test_get_favorite_fund_report(monkeypatch):
         token = register_and_login(client, "admin", "admin@example.com", "13800138000")
         client.post(
             "/api/v1/funds/favorites/add",
-            json={"fund_code": "000001", "fund_name": "华夏成长混合", "fund_type": "混合型-灵活"},
+            json={
+                "fund_code": "000001",
+                "fund_name": "华夏成长混合",
+                "fund_type": "混合型-灵活",
+            },
             headers=auth_headers(token),
         )
         client.post(
             "/api/v1/funds/favorites/add",
-            json={"fund_code": "000003", "fund_name": "中海可转债债券A", "fund_type": "债券型"},
+            json={
+                "fund_code": "000003",
+                "fund_name": "中海可转债债券A",
+                "fund_type": "债券型",
+            },
             headers=auth_headers(token),
         )
 
@@ -400,22 +433,35 @@ def test_get_favorite_fund_report(monkeypatch):
             "flat_count": 0,
             "missing_count": 0,
             "alert_count": 2,
-            "max_up": {"fund_code": "000001", "fund_name": "华夏成长混合", "rate": "3.20%"},
-            "max_down": {"fund_code": "000003", "fund_name": "中海可转债债券A", "rate": "-2.10%"},
-        }
-        assert sorted(data["alerts"], key=lambda item: (item["fund_code"], item["message"])) == sorted([
-            {
+            "max_up": {
                 "fund_code": "000001",
                 "fund_name": "华夏成长混合",
-                "level": "warning",
-                "message": "估算涨幅 3.20%",
+                "rate": "3.20%",
             },
-            {
+            "max_down": {
                 "fund_code": "000003",
                 "fund_name": "中海可转债债券A",
-                "level": "warning",
-                "message": "估算跌幅 -2.10%",
+                "rate": "-2.10%",
             },
-        ], key=lambda item: (item["fund_code"], item["message"]))
+        }
+        assert sorted(
+            data["alerts"], key=lambda item: (item["fund_code"], item["message"])
+        ) == sorted(
+            [
+                {
+                    "fund_code": "000001",
+                    "fund_name": "华夏成长混合",
+                    "level": "warning",
+                    "message": "估算涨幅 3.20%",
+                },
+                {
+                    "fund_code": "000003",
+                    "fund_name": "中海可转债债券A",
+                    "level": "warning",
+                    "message": "估算跌幅 -2.10%",
+                },
+            ],
+            key=lambda item: (item["fund_code"], item["message"]),
+        )
     finally:
         clear_overrides()

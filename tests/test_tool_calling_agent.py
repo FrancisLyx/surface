@@ -1,12 +1,14 @@
 from langchain_core.messages import AIMessage
 
-from app.agents import fund_analysis_graph
-from app.modules.fund.schema import (
+from app.modules.agent.events import AgentStreamEvent
+from app.modules.agent.graphs import fund_analysis as fund_analysis_graph
+from app.modules.fund.schemas import (
     FundDetailItem,
     FundEstimationItem,
     FundProfileResponse,
     FundValueResponse,
 )
+from app.modules.fund.public import FundQueryFacade
 
 
 class FakeToolCallingModel:
@@ -40,7 +42,9 @@ class FakeToolCallingModel:
                     },
                 ],
             )
-        raise AssertionError("final answer should be streamed directly after tool results")
+        raise AssertionError(
+            "final answer should be streamed directly after tool results"
+        )
 
     def stream(self, messages):
         self.messages.append(messages)
@@ -53,9 +57,9 @@ def test_tool_calling_fund_agent_lets_model_choose_tools(monkeypatch):
     monkeypatch.setattr(fund_analysis_graph, "build_chat_model", lambda: fake_model)
 
     monkeypatch.setattr(
-        fund_analysis_graph.fund_service,
+        FundQueryFacade,
         "get_fund_value",
-        lambda request: FundValueResponse(
+        lambda self, request: FundValueResponse(
             fund_code=request.fund_code,
             source="estimation",
             estimation=FundEstimationItem(
@@ -75,9 +79,9 @@ def test_tool_calling_fund_agent_lets_model_choose_tools(monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        fund_analysis_graph.fund_service,
+        FundQueryFacade,
         "get_fund_profile",
-        lambda request: FundProfileResponse(
+        lambda self, request: FundProfileResponse(
             symbol=request.symbol,
             year=request.year,
             basic_info=[FundDetailItem(item="基金简称", value="易方达价值成长混合")],
@@ -87,35 +91,59 @@ def test_tool_calling_fund_agent_lets_model_choose_tools(monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        fund_analysis_graph.fund_service,
+        FundQueryFacade,
         "get_fund_nav_trend_summary",
-        lambda fund_code: {"period": "近一年", "period_return": "8.00%", "max_drawdown": "-12.00%"},
+        lambda self, fund_code: {
+            "period": "近一年",
+            "period_return": "8.00%",
+            "max_drawdown": "-12.00%",
+        },
     )
 
-    events = list(fund_analysis_graph.stream_fund_deep_analysis({"fund_code": "110010"}, user=None, db=None))
-    chunks = [event.data for event in events if isinstance(event, AgentStreamEvent) and event.event == "message"]
+    events = list(
+        fund_analysis_graph.stream_fund_deep_analysis(
+            {"fund_code": "110010"}, user=None, db=None
+        )
+    )
+    chunks = [
+        event.data
+        for event in events
+        if isinstance(event, AgentStreamEvent) and event.event == "message"
+    ]
 
     assert chunks == [
         {"type": "assistant_delta", "content": "# 基金分析\n"},
         {"type": "assistant_delta", "content": "动作结论：观望"},
     ]
     assert len(fake_model.messages) == 2
-    tool_messages = [message for message in fake_model.messages[1] if message.__class__.__name__ == "ToolMessage"]
+    tool_messages = [
+        message
+        for message in fake_model.messages[1]
+        if message.__class__.__name__ == "ToolMessage"
+    ]
     assert [message.name for message in tool_messages] == [
         "get_fund_value",
         "get_fund_profile",
         "get_fund_nav_trend_summary",
     ]
-    tool_call_events = [event for event in events if isinstance(event, AgentStreamEvent) and event.event == "tool_call"]
+    tool_call_events = [
+        event
+        for event in events
+        if isinstance(event, AgentStreamEvent) and event.event == "tool_call"
+    ]
     assert [event.data["tool_name"] for event in tool_call_events] == [
         "get_fund_value",
         "get_fund_profile",
         "get_fund_nav_trend_summary",
     ]
     tool_result_events = [
-        event for event in events if isinstance(event, AgentStreamEvent) and event.event == "tool_result"
+        event
+        for event in events
+        if isinstance(event, AgentStreamEvent) and event.event == "tool_result"
     ]
     assert tool_result_events[0].data["data"]["fund_code"] == "110010"
-    assert tool_result_events[1].data["data"]["basic_info"][0]["value"] == "易方达价值成长混合"
+    assert (
+        tool_result_events[1].data["data"]["basic_info"][0]["value"]
+        == "易方达价值成长混合"
+    )
     assert tool_result_events[2].data["data"]["period_return"] == "8.00%"
-from app.modules.agent.event import AgentStreamEvent

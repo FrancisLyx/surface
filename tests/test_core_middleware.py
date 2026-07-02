@@ -8,16 +8,22 @@ from app.main import app
 def test_request_middleware_adds_request_id_and_process_time_headers():
     request_id = "test-request-id"
 
-    response = TestClient(app).get("/api/v1/funds/not-exist", headers={"X-Request-ID": request_id})
+    response = TestClient(app).get(
+        "/api/v1/funds/not-exist", headers={"X-Request-ID": request_id}
+    )
 
     assert response.headers["X-Request-ID"] == request_id
     assert "X-Process-Time" in response.headers
 
 
 def test_http_exception_response_uses_standard_error_shape():
-    app.dependency_overrides[get_current_user_context] = lambda: CurrentUser(id=1, username="admin")
+    app.dependency_overrides[get_current_user_context] = lambda: CurrentUser(
+        id=1, username="admin"
+    )
     try:
-        response = TestClient(app).post("/api/v1/funds/value", json={"fund_code": "", "source": "daily"})
+        response = TestClient(app).post(
+            "/api/v1/funds/value", json={"fund_code": "", "source": "daily"}
+        )
     finally:
         app.dependency_overrides.pop(get_current_user_context, None)
 
@@ -31,7 +37,9 @@ def test_http_exception_response_uses_standard_error_shape():
 
 
 def test_fund_routes_require_token():
-    response = TestClient(app).post("/api/v1/funds/list", json={"page": 1, "page_size": 10})
+    response = TestClient(app).post(
+        "/api/v1/funds/list", json={"page": 1, "page_size": 10}
+    )
 
     assert response.status_code == 401
     assert response.json()["code"] == 401
