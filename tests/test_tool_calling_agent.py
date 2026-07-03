@@ -1,14 +1,8 @@
 from langchain_core.messages import AIMessage
+import pytest
 
 from app.modules.agent.events import AgentStreamEvent
 from app.modules.agent.graphs import fund_analysis as fund_analysis_graph
-from app.modules.fund.schemas import (
-    FundDetailItem,
-    FundEstimationItem,
-    FundProfileResponse,
-    FundValueResponse,
-)
-from app.modules.fund.public import FundQueryFacade
 
 
 class FakeToolCallingModel:
@@ -52,59 +46,78 @@ class FakeToolCallingModel:
         yield AIMessage(content="动作结论：观望")
 
 
-def test_tool_calling_fund_agent_lets_model_choose_tools(monkeypatch):
+class FakeFavoriteListToolModel:
+    def __init__(self):
+        self.messages = []
+
+    def bind_tools(self, tools):
+        self.tools = tools
+        return self
+
+    def invoke(self, messages):
+        self.messages.append(messages)
+        if len(self.messages) == 1:
+            return AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "get_favorite_fund_list",
+                        "args": {},
+                        "id": "call_favorites",
+                    },
+                ],
+            )
+        raise AssertionError("final answer should be streamed after favorite list")
+
+    def stream(self, messages):
+        self.messages.append(messages)
+        yield AIMessage(content="你有 1 只自选基金")
+
+
+class FakeToolGateway:
+    def __init__(self):
+        self.calls = []
+
+    async def execute(self, tool_name, args, user):
+        self.calls.append((tool_name, args, user))
+        if tool_name == "get_fund_value":
+            return {"fund_code": args["fund_code"]}
+        if tool_name == "get_fund_profile":
+            return {"basic_info": [{"item": "基金简称", "value": "易方达价值成长混合"}]}
+        if tool_name == "get_fund_nav_trend_summary":
+            return {
+                "period": "近一年",
+                "period_return": "8.00%",
+                "max_drawdown": "-12.00%",
+            }
+        if tool_name == "get_favorite_fund_list":
+            return {
+                "total": 1,
+                "items": [
+                    {
+                        "fund_code": "110010",
+                        "fund_name": "易方达价值成长混合",
+                        "fund_type": "混合型",
+                    }
+                ],
+            }
+        raise AssertionError(f"unexpected tool: {tool_name}")
+
+
+@pytest.mark.asyncio
+async def test_tool_calling_fund_agent_lets_model_choose_tools(monkeypatch):
     fake_model = FakeToolCallingModel()
+    tool_gateway = FakeToolGateway()
     monkeypatch.setattr(fund_analysis_graph, "build_chat_model", lambda: fake_model)
 
-    monkeypatch.setattr(
-        FundQueryFacade,
-        "get_fund_value",
-        lambda self, request: FundValueResponse(
-            fund_code=request.fund_code,
-            source="estimation",
-            estimation=FundEstimationItem(
-                code=request.fund_code,
-                name="易方达价值成长混合",
-                estimate_date="2026-07-01",
-                estimated_nav="2.9000",
-                estimated_growth_rate="1.20%",
-                published_date="2026-06-30",
-                published_nav="2.8000",
-                published_growth_rate="-2.24%",
-                estimate_deviation="",
-                previous_nav_date="2026-06-29",
-                previous_nav="2.8600",
-            ),
-            latest_nav=None,
-        ),
-    )
-    monkeypatch.setattr(
-        FundQueryFacade,
-        "get_fund_profile",
-        lambda self, request: FundProfileResponse(
-            symbol=request.symbol,
-            year=request.year,
-            basic_info=[FundDetailItem(item="基金简称", value="易方达价值成长混合")],
-            fee_sections=[],
-            holdings=[{"股票名称": "示例股票", "占净值比例": "5.00%"}],
-            industry_allocations=[{"行业类别": "制造业", "占净值比例": "20.00%"}],
-        ),
-    )
-    monkeypatch.setattr(
-        FundQueryFacade,
-        "get_fund_nav_trend_summary",
-        lambda self, fund_code: {
-            "period": "近一年",
-            "period_return": "8.00%",
-            "max_drawdown": "-12.00%",
-        },
-    )
-
-    events = list(
-        fund_analysis_graph.stream_fund_deep_analysis(
-            {"fund_code": "110010"}, user=None, db=None
+    events = [
+        event
+        async for event in fund_analysis_graph.stream_agent_chat_response(
+            {"fund_code": "110010", "message": "请分析基金 110010"},
+            history=[],
+            tool_gateway=tool_gateway,
         )
-    )
+    ]
     chunks = [
         event.data
         for event in events
@@ -147,3 +160,48 @@ def test_tool_calling_fund_agent_lets_model_choose_tools(monkeypatch):
         == "易方达价值成长混合"
     )
     assert tool_result_events[2].data["data"]["period_return"] == "8.00%"
+
+
+@pytest.mark.asyncio
+async def test_tool_calling_agent_uses_gateway_for_favorite_fund_list(monkeypatch):
+    fake_model = FakeFavoriteListToolModel()
+    tool_gateway = FakeToolGateway()
+    user = object()
+    monkeypatch.setattr(fund_analysis_graph, "build_chat_model", lambda: fake_model)
+
+    events = [
+        event
+        async for event in fund_analysis_graph.stream_agent_chat_response(
+            {"message": "我的自选列表有哪些"},
+            history=[],
+            persona="favorite_scan",
+            user=user,
+            tool_gateway=tool_gateway,
+        )
+    ]
+
+    tool_names = [
+        event.data["tool_name"]
+        for event in events
+        if isinstance(event, AgentStreamEvent) and event.event == "tool_call"
+    ]
+    tool_results = [
+        event.data["data"]
+        for event in events
+        if isinstance(event, AgentStreamEvent) and event.event == "tool_result"
+    ]
+
+    assert tool_names == ["get_favorite_fund_list"]
+    assert tool_results == [
+        {
+            "total": 1,
+            "items": [
+                {
+                    "fund_code": "110010",
+                    "fund_name": "易方达价值成长混合",
+                    "fund_type": "混合型",
+                }
+            ],
+        }
+    ]
+    assert tool_gateway.calls == [("get_favorite_fund_list", {}, user)]

@@ -118,8 +118,11 @@ def get_ai_fund_report_service(
 
 def get_agent_service(
     uow_factory: Annotated[AgentUowFactory, Depends(get_agent_uow_factory)],
+    fund_favorite_service: Annotated[
+        FundFavoriteService, Depends(get_fund_favorite_service)
+    ],
 ) -> AgentService:
-    return create_agent_service(uow_factory)
+    return create_agent_service(uow_factory, fund_favorite_service)
 
 
 async def get_current_user_context(

@@ -26,6 +26,8 @@ from app.modules.agent.models import (
     AgentRun,
 )
 from app.modules.agent.uow import AgentUnitOfWork
+from app.modules.agent.tool_gateway import DefaultAgentToolGateway
+from app.modules.fund.favorite_service import FundFavoriteService
 from app.modules.user.models import User
 from app.modules.agent import runtime as agent_runtime_service
 from app.modules.agent.events import AgentStreamEvent, conversation_event, error_event
@@ -67,8 +69,13 @@ class StreamStart:
 
 
 class AgentService:
-    def __init__(self, uow_factory: Callable[[], AgentUnitOfWork]) -> None:
+    def __init__(
+        self,
+        uow_factory: Callable[[], AgentUnitOfWork],
+        fund_favorite_service: FundFavoriteService | None = None,
+    ) -> None:
         self._uow_factory = uow_factory
+        self._fund_favorite_service = fund_favorite_service
 
     async def ensure_builtin_agents(self) -> None:
         async with self._uow_factory() as uow:
@@ -115,13 +122,17 @@ class AgentService:
 
         started_at = perf_counter()
         assistant_chunks: list[str] = []
+        tool_gateway = DefaultAgentToolGateway(
+            fund_favorite_service=self._fund_favorite_service
+        )
         try:
-            for event in agent_runtime_service.stream_agent_chat(
+            async for event in agent_runtime_service.stream_agent_chat(
                 start.agent,
                 {"message": normalized_message, "fund_code": normalized_fund_code},
                 start.history,
                 user,
                 None,
+                tool_gateway=tool_gateway,
             ):
                 if event.event == "message" and isinstance(event.data, dict):
                     assistant_chunks.append(str(event.data.get("content") or ""))

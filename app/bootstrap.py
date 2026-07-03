@@ -72,5 +72,8 @@ def create_ai_fund_report_service(
     return AiFundReportService(uow_factory)
 
 
-def create_agent_service(uow_factory: Callable[[], AgentUnitOfWork]) -> AgentService:
-    return AgentService(uow_factory)
+def create_agent_service(
+    uow_factory: Callable[[], AgentUnitOfWork],
+    fund_favorite_service: FundFavoriteService | None = None,
+) -> AgentService:
+    return AgentService(uow_factory, fund_favorite_service=fund_favorite_service)

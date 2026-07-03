@@ -72,8 +72,13 @@ def test_list_agents_returns_enabled_builtin_agents(monkeypatch):
 def test_stream_agent_chat_saves_conversation_and_messages(monkeypatch):
     monkeypatch.setenv("USER_REGISTRATION_ENABLED", "true")
 
-    def fake_stream_agent_chat(
-        agent: AgentDefinition, payload: dict, history: list[dict], user, db
+    async def fake_stream_agent_chat(
+        agent: AgentDefinition,
+        payload: dict,
+        history: list[dict],
+        user,
+        db,
+        tool_gateway=None,
     ):
         assert agent.code == "fund_deep_analysis"
         assert payload == {"message": "今天怎么看？", "fund_code": "110010"}
@@ -160,8 +165,13 @@ def test_stream_agent_chat_saves_conversation_and_messages(monkeypatch):
 def test_stream_agent_chat_runtime_does_not_receive_live_db_session(monkeypatch):
     monkeypatch.setenv("USER_REGISTRATION_ENABLED", "true")
 
-    def fake_stream_agent_chat(
-        agent: AgentDefinition, payload: dict, history: list[dict], user, db
+    async def fake_stream_agent_chat(
+        agent: AgentDefinition,
+        payload: dict,
+        history: list[dict],
+        user,
+        db,
+        tool_gateway=None,
     ):
         assert db is None
         yield message_event("可以先观望")
@@ -183,6 +193,45 @@ def test_stream_agent_chat_runtime_does_not_receive_live_db_session(monkeypatch)
 
         assert response.status_code == 200
         assert "可以先观望" in body
+    finally:
+        clear_overrides()
+
+
+def test_stream_agent_chat_passes_tool_gateway_to_runtime(monkeypatch):
+    monkeypatch.setenv("USER_REGISTRATION_ENABLED", "true")
+    captured_gateway = []
+
+    async def fake_stream_agent_chat(
+        agent: AgentDefinition,
+        payload: dict,
+        history: list[dict],
+        user,
+        db,
+        tool_gateway=None,
+    ):
+        captured_gateway.append(tool_gateway)
+        yield message_event("已读取自选列表")
+
+    monkeypatch.setattr(
+        agent_runtime_service, "stream_agent_chat", fake_stream_agent_chat
+    )
+
+    client, _ = make_client_with_session()
+    try:
+        token = register_and_login(client)
+
+        with client.stream(
+            "POST",
+            "/api/v1/agents/chat/stream",
+            json={"agent_id": 2, "message": "我的自选列表有哪些？"},
+            headers={"Authorization": f"Bearer {token}"},
+        ) as response:
+            body = response.read().decode("utf-8")
+
+        assert response.status_code == 200
+        assert "已读取自选列表" in body
+        assert len(captured_gateway) == 1
+        assert captured_gateway[0] is not None
     finally:
         clear_overrides()
 

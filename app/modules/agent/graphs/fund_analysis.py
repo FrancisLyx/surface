@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Any, TypedDict
 
@@ -14,8 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.clients.langchain_client import build_chat_model, stream_chat
 from app.core.current_user import CurrentUser
-from app.modules.fund.public import FundQueryFacade
-from app.modules.fund.schemas import FundProfileRequest, FundValueRequest
+from app.modules.agent.tool_gateway import AgentToolGateway, DefaultAgentToolGateway
 from app.modules.user.models import User
 from app.modules.agent.events import message_event, tool_call_event, tool_result_event
 from app.modules.agent.tools import fund as fund_tools
@@ -29,39 +29,55 @@ class FundAgentState(TypedDict, total=False):
     prompt: str
 
 
-def stream_fund_deep_analysis(
+async def stream_fund_deep_analysis(
     payload: dict[str, Any], user: CurrentUser | User | None, db: AsyncSession | None
 ):
     fund_code = str(payload.get("fund_code") or "").strip()
     if not fund_code:
         raise ValueError("fund_code is required")
 
-    yield from _run_tool_calling_fund_agent(fund_code, persona="professional")
+    current_user = user if isinstance(user, CurrentUser) else None
+    async for event in _run_tool_calling_fund_agent(
+        fund_code, persona="professional", user=current_user
+    ):
+        yield event
 
 
-def stream_aggressive_ajia_analysis(
+async def stream_aggressive_ajia_analysis(
     payload: dict[str, Any], user: CurrentUser | User | None, db: AsyncSession | None
 ):
     fund_code = str(payload.get("fund_code") or "").strip()
     if not fund_code:
         raise ValueError("fund_code is required")
 
-    yield from _run_tool_calling_fund_agent(fund_code, persona="aggressive_ajia")
+    current_user = user if isinstance(user, CurrentUser) else None
+    async for event in _run_tool_calling_fund_agent(
+        fund_code, persona="aggressive_ajia", user=current_user
+    ):
+        yield event
 
 
-def stream_agent_chat_response(
+async def stream_agent_chat_response(
     payload: dict[str, Any],
     history: list[dict[str, str]],
     persona: str = "professional",
+    user: CurrentUser | None = None,
+    tool_gateway: AgentToolGateway | None = None,
 ):
     message = str(payload.get("message") or "").strip()
     if not message:
         raise ValueError("message is required")
 
     fund_code = str(payload.get("fund_code") or "").strip()
-    yield from _run_tool_calling_fund_agent(
-        fund_code=fund_code, persona=persona, question=message, history=history
-    )
+    async for event in _run_tool_calling_fund_agent(
+        fund_code=fund_code,
+        persona=persona,
+        question=message,
+        history=history,
+        user=user,
+        tool_gateway=tool_gateway,
+    ):
+        yield event
 
 
 def stream_favorite_fund_scan(
@@ -86,14 +102,32 @@ def _fund_deep_analysis_graph():
     return graph.compile()
 
 
-def _run_tool_calling_fund_agent(
+async def _execute_tool_call(
+    gateway: AgentToolGateway,
+    tool_names: set[str],
+    call: dict[str, Any],
+    user: CurrentUser | None,
+) -> dict[str, Any]:
+    tool_name = call["name"]
+    if tool_name not in tool_names:
+        return {"error": f"unsupported tool: {tool_name}"}
+    try:
+        return await gateway.execute(tool_name, call.get("args") or {}, user)
+    except Exception as exc:  # 单个工具失败不影响其他并发工具
+        return {"error": f"{tool_name} failed: {exc}"}
+
+
+async def _run_tool_calling_fund_agent(
     fund_code: str = "",
     persona: str = "professional",
     question: str | None = None,
     history: list[dict[str, str]] | None = None,
+    user: CurrentUser | None = None,
+    tool_gateway: AgentToolGateway | None = None,
 ):
     tools = _build_fund_agent_tools()
-    tool_by_name = {item.name: item for item in tools}
+    tool_names = {item.name for item in tools}
+    gateway = tool_gateway or DefaultAgentToolGateway()
     model = build_chat_model().bind_tools(tools)
 
     messages: list[BaseMessage] = [
@@ -118,43 +152,51 @@ def _run_tool_calling_fund_agent(
         response = model.invoke(messages)
         messages.append(response)
         tool_calls = getattr(response, "tool_calls", None) or []
+
+        # 先播报全部工具调用，再并发执行，避免逐个串行等待
         for call in tool_calls:
-            tool_name = call["name"]
-            tool_args = call.get("args") or {}
-            tool_call_id = call["id"]
             yield tool_call_event(
-                tool_call_id=tool_call_id,
+                tool_call_id=call["id"],
                 step_id="generate",
-                tool_name=tool_name,
-                input_data=tool_args,
-            )
-            selected_tool = tool_by_name.get(tool_name)
-            if selected_tool is None:
-                result = {"error": f"unsupported tool: {tool_name}"}
-            else:
-                result = selected_tool.invoke(tool_args)
-            yield tool_result_event(
-                tool_call_id=tool_call_id,
-                status="success" if "error" not in result else "failed",
-                summary=_tool_result_summary(tool_name, result),
-                data=result,
-            )
-            messages.append(
-                ToolMessage(
-                    content=_to_json(result),
-                    tool_call_id=tool_call_id,
-                    name=tool_name,
-                )
+                tool_name=call["name"],
+                input_data=call.get("args") or {},
             )
 
         if tool_calls:
-            yield from _stream_final_response(model, messages)
+            results = await asyncio.gather(
+                *(
+                    _execute_tool_call(gateway, tool_names, call, user)
+                    for call in tool_calls
+                )
+            )
+            for call, result in zip(tool_calls, results):
+                yield tool_result_event(
+                    tool_call_id=call["id"],
+                    status="success" if "error" not in result else "failed",
+                    summary=_tool_result_summary(call["name"], result),
+                    data=result,
+                )
+                messages.append(
+                    ToolMessage(
+                        content=_to_json(result),
+                        tool_call_id=call["id"],
+                        name=call["name"],
+                    )
+                )
+
+            messages.append(
+                HumanMessage(
+                    content="请直接依据上面工具返回的内容回答用户，不要忽略其中的信息。"
+                )
+            )
+            for event in _stream_final_response(model, messages):
+                yield event
             return
 
         yield message_event(_message_content_to_text(response))
         return
 
-    yield from _stream_final_response(
+    for event in _stream_final_response(
         model,
         [
             *messages,
@@ -162,39 +204,36 @@ def _run_tool_calling_fund_agent(
                 content="请基于已经获取的工具结果，直接输出最终 Markdown 报告。"
             ),
         ],
-    )
+    ):
+        yield event
 
 
 def _build_fund_agent_tools():
-    fund_query = FundQueryFacade()
-
     @tool
     def get_fund_value(fund_code: str) -> dict[str, Any]:
         """查询基金实时估值和已公布净值。输入基金代码，例如 110010。"""
-        result = fund_query.get_fund_value(
-            FundValueRequest(fund_code=fund_code, source="auto")
-        )
-        return result.model_dump()
+        return {}
 
     @tool
     def get_fund_profile(fund_code: str) -> dict[str, Any]:
         """查询基金画像，包括基础信息、主要持仓、行业配置和费率信息。输入基金代码。"""
-        from datetime import date
-
-        result = fund_query.get_fund_profile(
-            FundProfileRequest(symbol=fund_code, year=str(date.today().year))
-        )
-        payload = result.model_dump()
-        payload["holdings"] = payload["holdings"][:10]
-        payload["industry_allocations"] = payload["industry_allocations"][:10]
-        return payload
+        return {}
 
     @tool
     def get_fund_nav_trend_summary(fund_code: str) -> dict[str, Any]:
         """查询基金近一年净值走势摘要，包括区间收益、最大回撤和最近净值点。输入基金代码。"""
-        return fund_query.get_fund_nav_trend_summary(fund_code)
+        return {}
 
-    return [get_fund_value, get_fund_profile, get_fund_nav_trend_summary]
+    @tool
+    def get_favorite_fund_list() -> dict[str, Any]:
+        """查询当前用户的自选基金列表。用户问“我的自选”“自选列表”“关注的基金”时调用。"""
+        return {}
+    return [
+        get_fund_value,
+        get_fund_profile,
+        get_fund_nav_trend_summary,
+        get_favorite_fund_list,
+    ]
 
 
 def _fund_agent_system_prompt(persona: str = "professional") -> str:
@@ -246,11 +285,6 @@ def _fund_agent_user_prompt(
 {fund_hint}
 用户问题：{current_question}
 
-你可以自主选择调用以下工具：
-1. get_fund_value：查询基金实时估值和已公布净值。
-2. get_fund_profile：查询基金画像、持仓和行业配置。
-3. get_fund_nav_trend_summary：查询近一年净值走势摘要。
-
 如果用户是在对话中追问，请直接回答问题，不要机械生成完整报告。
 如果用户要求完整分析，再输出结构化 Markdown。
 """.strip()
@@ -260,11 +294,6 @@ def _fund_agent_user_prompt(
 
 {fund_hint}
 用户问题：{current_question}
-
-你可以自主选择调用以下工具：
-1. get_fund_value：查询基金实时估值和已公布净值。
-2. get_fund_profile：查询基金画像、持仓和行业配置。
-3. get_fund_nav_trend_summary：查询近一年净值走势摘要。
 
 如果用户是在对话中追问，请直接回答问题，不要机械生成完整报告。
 如果用户要求完整分析，再输出结构化 Markdown。
