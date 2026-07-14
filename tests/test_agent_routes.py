@@ -60,9 +60,15 @@ def test_list_agents_returns_enabled_builtin_agents(monkeypatch):
 
         assert response.status_code == 200
         data = response.json()["data"]
-        assert data["total"] == 3
+        assert data["total"] == 5
         names = {item["name"] for item in data["items"]}
-        assert names == {"林远山", "许知夏", "股神阿佳"}
+        assert names == {
+            "林远山",
+            "许知夏",
+            "股神阿佳",
+            "盘中观察员",
+            "纪律风控官",
+        }
         assert all("code" not in item for item in data["items"])
         assert all(item["enabled"] for item in data["items"])
     finally:

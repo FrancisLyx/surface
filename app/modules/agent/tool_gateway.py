@@ -6,6 +6,8 @@ from app.core.current_user import CurrentUser
 from app.modules.fund.favorite_service import FundFavoriteService
 from app.modules.fund.public import FundQueryFacade
 from app.modules.fund.schemas import FundProfileRequest, FundValueRequest
+from app.modules.strategy import service as strategy_service
+from app.modules.strategy.schemas import MarketScriptKey
 
 
 class AgentToolGateway(Protocol):
@@ -41,6 +43,24 @@ class DefaultAgentToolGateway:
             )
         if tool_name == "get_favorite_fund_list":
             return await self._get_favorite_fund_list(user)
+        if tool_name == "get_market_structure_watch_points":
+            return await asyncio.to_thread(
+                self._get_market_structure_watch_points,
+                args.get("market_script_key"),
+            )
+        if tool_name == "get_market_structure_discipline_advice":
+            return await asyncio.to_thread(
+                self._get_market_structure_discipline_advice,
+                args.get("market_script_key"),
+            )
+        if tool_name == "get_market_structure_tool_context":
+            return await asyncio.to_thread(self._get_market_structure_tool_context)
+        if tool_name == "search_strategy_etfs":
+            return await asyncio.to_thread(
+                self._search_strategy_etfs,
+                str(args.get("keyword") or ""),
+                int(args.get("limit") or 10),
+            )
         return {"error": f"unsupported tool: {tool_name}"}
 
     def _get_fund_value(self, fund_code: str) -> dict[str, Any]:
@@ -81,3 +101,51 @@ class DefaultAgentToolGateway:
                 for item in items
             ],
         }
+
+    def _get_market_structure_watch_points(
+        self, market_script_key: object | None
+    ) -> dict[str, Any]:
+        result = strategy_service.get_market_structure_watch_points(
+            _normalize_market_script_key(market_script_key)
+        )
+        return _dump_tool_result(result)
+
+    def _get_market_structure_discipline_advice(
+        self, market_script_key: object | None
+    ) -> dict[str, Any]:
+        result = strategy_service.get_market_structure_discipline_advice(
+            _normalize_market_script_key(market_script_key)
+        )
+        return _dump_tool_result(result)
+
+    def _get_market_structure_tool_context(self) -> dict[str, Any]:
+        return _dump_tool_result(strategy_service.get_market_structure_tool_context())
+
+    def _search_strategy_etfs(self, keyword: str, limit: int) -> dict[str, Any]:
+        result = strategy_service.search_strategy_etfs(keyword=keyword, limit=limit)
+        return _dump_tool_result(result)
+
+
+def _normalize_market_script_key(value: object | None) -> MarketScriptKey | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text in {
+        "domestic_story",
+        "overseas_earnings",
+        "hard_tech_siphon",
+        "rotation_other",
+        "unknown",
+    }:
+        return text  # type: ignore[return-value]
+    return None
+
+
+def _dump_tool_result(result: object) -> dict[str, Any]:
+    if hasattr(result, "model_dump"):
+        return result.model_dump()  # type: ignore[no-any-return]
+    if isinstance(result, dict):
+        return result
+    return {"value": result}

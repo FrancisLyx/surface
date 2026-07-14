@@ -3,6 +3,7 @@ import pytest
 
 from app.modules.agent.events import AgentStreamEvent
 from app.modules.agent.graphs import fund_analysis as fund_analysis_graph
+from app.modules.agent.tool_gateway import DefaultAgentToolGateway
 
 
 class FakeToolCallingModel:
@@ -102,6 +103,80 @@ class FakeToolGateway:
                 ],
             }
         raise AssertionError(f"unexpected tool: {tool_name}")
+
+
+@pytest.mark.asyncio
+async def test_default_tool_gateway_supports_market_strategy_tools(monkeypatch):
+    from app.modules.strategy import service as strategy_service
+
+    monkeypatch.setattr(
+        strategy_service,
+        "get_market_structure_watch_points",
+        lambda market_script_key=None: {
+            "market_script_key": market_script_key,
+            "sectors": ["机器人", "生物医药"],
+        },
+    )
+    monkeypatch.setattr(
+        strategy_service,
+        "get_market_structure_discipline_advice",
+        lambda market_script_key=None: {
+            "market_script_key": market_script_key,
+            "action": "观望",
+        },
+    )
+    monkeypatch.setattr(
+        strategy_service,
+        "get_market_structure_tool_context",
+        lambda: {"market_script": "rotation_other", "quotes": []},
+    )
+    monkeypatch.setattr(
+        strategy_service,
+        "search_strategy_etfs",
+        lambda keyword, limit=10: {
+            "keyword": keyword,
+            "limit": limit,
+            "items": [{"etf_code": "516950"}],
+        },
+    )
+
+    gateway = DefaultAgentToolGateway()
+
+    watch_points = await gateway.execute(
+        "get_market_structure_watch_points",
+        {"market_script_key": "rotation_other"},
+        user=None,
+    )
+    discipline = await gateway.execute(
+        "get_market_structure_discipline_advice",
+        {"market_script_key": "rotation_other"},
+        user=None,
+    )
+    context = await gateway.execute(
+        "get_market_structure_tool_context",
+        {},
+        user=None,
+    )
+    etfs = await gateway.execute(
+        "search_strategy_etfs",
+        {"keyword": "机器人", "limit": 5},
+        user=None,
+    )
+
+    assert watch_points == {
+        "market_script_key": "rotation_other",
+        "sectors": ["机器人", "生物医药"],
+    }
+    assert discipline == {
+        "market_script_key": "rotation_other",
+        "action": "观望",
+    }
+    assert context == {"market_script": "rotation_other", "quotes": []}
+    assert etfs == {
+        "keyword": "机器人",
+        "limit": 5,
+        "items": [{"etf_code": "516950"}],
+    }
 
 
 @pytest.mark.asyncio

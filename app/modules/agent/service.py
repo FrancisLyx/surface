@@ -57,6 +57,22 @@ BUILTIN_AGENTS = [
         "system_prompt": "你是“股神阿佳”，一个真正的man、风格激进、说话直接、但不突破风控底线的金融分析智能体。",
         "graph_code": "aggressive_ajia_graph",
     },
+    {
+        "name": "盘中观察员",
+        "code": "market_intraday_watch",
+        "agent_type": "strategy",
+        "description": "根据市场格局四象限和盘中观察规则，提示当前应该关注的板块和信号。",
+        "system_prompt": "你是盘中观察员，负责根据市场格局工具结果输出盘中关注板块和观察信号。",
+        "graph_code": "market_intraday_watch_graph",
+    },
+    {
+        "name": "纪律风控官",
+        "code": "market_discipline_advisor",
+        "agent_type": "strategy",
+        "description": "根据市场格局四象限和操作纪律规则，给出仓位、追高、破位和回补建议。",
+        "system_prompt": "你是纪律风控官，负责根据市场格局工具结果输出操作纪律和风控建议。",
+        "graph_code": "market_discipline_advisor_graph",
+    },
 ]
 
 

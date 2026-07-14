@@ -1,8 +1,14 @@
 import json
+import threading
 import time
 import urllib.request
 
 import akshare as ak
+
+ETF_SPOT_QUOTES_CACHE_TTL_SECONDS = 20.0
+_etf_spot_quotes_cache = None
+_etf_spot_quotes_cache_expires_at = 0.0
+_etf_spot_quotes_cache_lock = threading.Lock()
 
 
 def get_fund_names():
@@ -15,6 +21,39 @@ def get_fund_detail(symbol: str):
 
 def get_fund_estimations(category: str = "全部"):
     return ak.fund_value_estimation_em(symbol=category).fillna("")
+
+
+def get_etf_spot_quotes(force_refresh: bool = False):
+    global _etf_spot_quotes_cache, _etf_spot_quotes_cache_expires_at
+
+    now = time.monotonic()
+    if (
+        not force_refresh
+        and _etf_spot_quotes_cache is not None
+        and now < _etf_spot_quotes_cache_expires_at
+    ):
+        return _etf_spot_quotes_cache
+
+    with _etf_spot_quotes_cache_lock:
+        now = time.monotonic()
+        if (
+            not force_refresh
+            and _etf_spot_quotes_cache is not None
+            and now < _etf_spot_quotes_cache_expires_at
+        ):
+            return _etf_spot_quotes_cache
+
+        _etf_spot_quotes_cache = ak.fund_etf_spot_em().fillna("")
+        _etf_spot_quotes_cache_expires_at = now + ETF_SPOT_QUOTES_CACHE_TTL_SECONDS
+        return _etf_spot_quotes_cache
+
+
+def clear_etf_spot_quotes_cache() -> None:
+    global _etf_spot_quotes_cache, _etf_spot_quotes_cache_expires_at
+
+    with _etf_spot_quotes_cache_lock:
+        _etf_spot_quotes_cache = None
+        _etf_spot_quotes_cache_expires_at = 0.0
 
 
 def get_fund_realtime_estimation(symbol: str) -> dict[str, str]:

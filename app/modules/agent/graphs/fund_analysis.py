@@ -228,15 +228,70 @@ def _build_fund_agent_tools():
     def get_favorite_fund_list() -> dict[str, Any]:
         """查询当前用户的自选基金列表。用户问“我的自选”“自选列表”“关注的基金”时调用。"""
         return {}
+
+    @tool
+    def get_market_structure_watch_points(
+        market_script_key: str | None = None,
+    ) -> dict[str, Any]:
+        """查询市场格局四象限对应的盘中实时观察结果。不确定剧本时可不传参数自动判断。"""
+        return {}
+
+    @tool
+    def get_market_structure_discipline_advice(
+        market_script_key: str | None = None,
+    ) -> dict[str, Any]:
+        """查询市场格局四象限对应的实时操作纪律、风险级别、触发条件和复核条件。不确定剧本时可不传参数自动判断。"""
+        return {}
+
+    @tool
+    def get_market_structure_tool_context() -> dict[str, Any]:
+        """一次性查询市场格局智能体上下文，包括实时 ETF、四象限、实时观察结果、操作纪律和候选 ETF。"""
+        return {}
+
+    @tool
+    def search_strategy_etfs(keyword: str, limit: int = 10) -> dict[str, Any]:
+        """按关键词查询策略相关 ETF 实时行情。关键词可以是机器人、医药、半导体、存储、通信等。"""
+        return {}
+
     return [
         get_fund_value,
         get_fund_profile,
         get_fund_nav_trend_summary,
         get_favorite_fund_list,
+        get_market_structure_watch_points,
+        get_market_structure_discipline_advice,
+        get_market_structure_tool_context,
+        search_strategy_etfs,
     ]
 
 
 def _fund_agent_system_prompt(persona: str = "professional") -> str:
+    if persona == "market_intraday_watch":
+        return """
+你是盘中观察员，一个市场格局策略智能体。
+你必须优先调用 get_market_structure_tool_context 工具获取实时 ETF、四象限剧本、实时观察结果、纪律建议和候选 ETF。
+需要补充某一板块 ETF 数据时，可调用 search_strategy_etfs。
+如果用户已经明确给出 market_script_key，可以把它传给工具；否则不传参数，让工具基于实时 ETF 自动判断。
+回答要聚焦：当前剧本、关注板块、每个板块的 observation、observed_etfs、均幅和成交额。
+盘中观察点必须来自工具返回的实时 observation/observed_etfs；PDF 规则只作为解释框架，不得把规则文案当成已经发生的实时观察。
+必须覆盖 PDF 规则：前排风向标、前排不稳则后排先降暴露、十点半前观察基金重仓指数、冲高回落、放量滞涨、勿追高。
+不要编造工具结果之外的实时新闻或个股表现。
+输出中文 Markdown。免责声明必须说明：仅用于学习和信息分析，不构成投资建议。
+""".strip()
+
+    if persona == "market_discipline_advisor":
+        return """
+你是纪律风控官，一个市场格局策略智能体。
+你必须优先调用 get_market_structure_tool_context 工具获取实时 ETF、四象限剧本、实时观察结果、纪律建议和候选 ETF。
+需要单独复核纪律规则时，可调用 get_market_structure_discipline_advice。
+如果用户已经明确给出 market_script_key，可以把它传给工具；否则不传参数，让工具基于实时 ETF 自动判断。
+回答要聚焦：action、risk_level、position_hint、evidence_quotes、trigger_conditions、risk_controls、invalidation_conditions。
+盘中状态必须引用工具返回的实时 observation/observed_etfs；操作纪律必须引用工具返回的实时 evidence_quotes 和条件列表。
+必须覆盖 PDF 规则：沉没成本不参与决策、21 日线不抵抗就走、跌破 60 日线看小平台抵抗、不抵抗且放量杀则等待箱体或 34 日线修复、勿追高。
+不能输出“必涨”“稳赚”“无脑冲”“满仓梭哈”；不能建议借钱、融资或加杠杆。
+输出中文 Markdown。免责声明必须说明：仅用于学习和信息分析，不构成投资建议。
+""".strip()
+
     if persona == "aggressive_ajia":
         return """
 你是“股神阿佳”，一个风格激进、说话直接、带一点江湖气的金融分析智能体。
@@ -273,6 +328,24 @@ def _fund_agent_user_prompt(
     fund_code: str, persona: str = "professional", question: str | None = None
 ) -> str:
     current_question = question or f"请分析基金 {fund_code}。"
+    if persona == "market_intraday_watch":
+        return f"""
+请作为盘中观察员回答用户问题。
+
+用户问题：{current_question}
+
+先调用盘中观察工具，再基于工具结果回答。
+""".strip()
+
+    if persona == "market_discipline_advisor":
+        return f"""
+请作为纪律风控官回答用户问题。
+
+用户问题：{current_question}
+
+先调用操作纪律工具，再基于工具结果回答。
+""".strip()
+
     fund_hint = (
         f"当前基金代码：{fund_code}。"
         if fund_code

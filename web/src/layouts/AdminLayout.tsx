@@ -3,26 +3,30 @@ import { Button, Layout, Menu, Space, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { clearToken, getStoredUser } from '../utils/auth'
-import { appRoutes, defaultRoutePath } from '../utils/route'
+import { getMenuRoutes, getSelectedMenuKey } from '../utils/navigation'
+import { appRoutes, defaultRoutePath, type AppRoute } from '../utils/route'
 
 const { Header, Sider, Content } = Layout
 
-const visibleRoutes = appRoutes.filter((route) => !route.hidden)
+const visibleRoutes = getMenuRoutes(appRoutes)
 
-const menuItems: MenuProps['items'] = visibleRoutes.map((route) => ({
-  key: route.path,
-  label: route.label,
-  icon: route.icon,
-}))
+function buildMenuItems(routes: AppRoute[]): MenuProps['items'] {
+  return routes.map((route) => ({
+    key: route.path,
+    label: route.label,
+    icon: route.icon,
+    children: route.children?.length ? buildMenuItems(getMenuRoutes(route.children)) : undefined,
+  }))
+}
+
+const menuItems = buildMenuItems(visibleRoutes)
 
 function AdminLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const user = getStoredUser()
 
-  const selectedKey =
-    visibleRoutes.find((item) => location.pathname === item.path || location.pathname.startsWith(`${item.path}/`))?.path ??
-    defaultRoutePath
+  const selectedKey = getSelectedMenuKey(appRoutes, location.pathname, defaultRoutePath)
 
   const logout = () => {
     clearToken()

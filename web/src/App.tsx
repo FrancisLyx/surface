@@ -5,7 +5,10 @@ import AdminLayout from './layouts/AdminLayout'
 import LoginPage from './pages/user/LoginPage'
 import RegisterPage from './pages/user/RegisterPage'
 import { appRoutes, defaultRoutePath } from './utils/route'
+import { flattenLeafRoutes } from './utils/navigation'
 import './App.css'
+
+const pageRoutes = flattenLeafRoutes(appRoutes)
 
 function App() {
   return (
@@ -26,9 +29,9 @@ function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<AdminLayout />}>
             <Route index element={<Navigate to={defaultRoutePath} replace />} />
-            {appRoutes.map((route) => {
+            {pageRoutes.map((route) => {
               const Page = route.component
-              return <Route key={route.path} path={route.path} element={<Page />} />
+              return Page ? <Route key={route.path} path={route.path} element={<Page />} /> : null
             })}
           </Route>
         </Route>

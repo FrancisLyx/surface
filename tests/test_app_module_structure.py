@@ -47,6 +47,11 @@ def test_business_modules_use_documented_module_layout():
             "models.py",
             "uow.py",
         },
+        "strategy": {
+            "router.py",
+            "schemas.py",
+            "service.py",
+        },
         "user": {
             "router.py",
             "schemas.py",

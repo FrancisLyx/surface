@@ -68,4 +68,26 @@ async def stream_agent_chat(
             yield event
         return
 
+    if agent.graph_code == "market_intraday_watch_graph":
+        async for event in stream_agent_chat_response(
+            payload,
+            history,
+            persona="market_intraday_watch",
+            user=user,
+            tool_gateway=tool_gateway,
+        ):
+            yield event
+        return
+
+    if agent.graph_code == "market_discipline_advisor_graph":
+        async for event in stream_agent_chat_response(
+            payload,
+            history,
+            persona="market_discipline_advisor",
+            user=user,
+            tool_gateway=tool_gateway,
+        ):
+            yield event
+        return
+
     raise ValueError(f"unsupported graph: {agent.graph_code}")

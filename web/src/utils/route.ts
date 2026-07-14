@@ -2,6 +2,8 @@ import {
   AppstoreOutlined,
   ApiOutlined,
   FileTextOutlined,
+  PartitionOutlined,
+  RadarChartOutlined,
   SettingOutlined,
   StarOutlined,
   UnorderedListOutlined,
@@ -14,12 +16,14 @@ import AiFundAnalysisPage from '../pages/ai/AiFundAnalysisPage'
 import FundFavoritesPage from '../pages/funds/FundFavoritesPage'
 import FundListPage from '../pages/funds/FundListPage'
 import SystemSettingsPage from '../pages/settings/SystemSettingsPage'
+import MarketStructureStrategyPage from '../pages/strategies/MarketStructureStrategyPage'
 
 export type AppRoute = {
   path: string
   label: string
   icon: ReactNode
-  component: ComponentType
+  component?: ComponentType
+  children?: AppRoute[]
   hidden?: boolean
 }
 
@@ -43,6 +47,19 @@ export const appRoutes: AppRoute[] = [
     label: '自选分析',
     icon: createElement(ApiOutlined),
     component: AiFundAnalysisPage,
+  },
+  {
+    path: '/strategies',
+    label: '策略分析',
+    icon: createElement(PartitionOutlined),
+    children: [
+      {
+        path: '/strategies/market-structure',
+        label: '市场格局风向标',
+        icon: createElement(RadarChartOutlined),
+        component: MarketStructureStrategyPage,
+      },
+    ],
   },
   {
     path: '/agents',
